@@ -93,6 +93,7 @@ jobs:
             # 7. Install Maven
             # ==========================================
 
+            
             echo "Installing Maven..."
 
             sudo dnf install maven -y
