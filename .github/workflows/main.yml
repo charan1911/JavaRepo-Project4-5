@@ -139,7 +139,7 @@ jobs:
             sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<'EOF'
             <?xml version="1.0" encoding="UTF-8"?>
 
-            <Context>
+            <Context privileged="true">
 
                 <CookieProcessor sameSiteCookies="strict" />
 
