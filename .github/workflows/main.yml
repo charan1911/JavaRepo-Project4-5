@@ -1,0 +1,227 @@
+name: Install Java and Tomcat
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  install-tomcat:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Connect to EC2 and install Java + Tomcat
+      - name: Install Java and Tomcat
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+
+          script: |
+
+            echo "================================"
+            echo "Updating system"
+            echo "================================"
+
+            sudo dnf update -y
+
+
+            echo "================================"
+            echo "Installing Java 17"
+            echo "================================"
+
+            sudo dnf install java-17-amazon-corretto-devel -y
+
+
+            echo "Checking Java version"
+
+            java -version
+
+
+            echo "================================"
+            echo "Creating Tomcat user"
+            echo "================================"
+
+            if ! id tomcat >/dev/null 2>&1; then
+              sudo useradd -r -m -U -d /opt/tomcat -s /bin/false tomcat
+            fi
+
+
+            echo "================================"
+            echo "Downloading Tomcat"
+            echo "================================"
+
+            cd /tmp
+
+            sudo rm -f apache-tomcat-10.1.60.tar.gz
+
+            sudo curl -O https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
+
+
+            echo "================================"
+            echo "Installing Tomcat"
+            echo "================================"
+
+            sudo rm -rf /opt/tomcat
+
+            sudo mkdir -p /opt/tomcat
+
+            sudo tar -xzf apache-tomcat-10.1.60.tar.gz \
+              --strip-components=1 \
+              -C /opt/tomcat
+
+
+            echo "================================"
+            echo "Setting Tomcat permissions"
+            echo "================================"
+
+            sudo chown -R tomcat:tomcat /opt/tomcat
+
+            sudo chmod +x /opt/tomcat/bin/*.sh
+
+
+            echo "================================"
+            echo "Configuring Tomcat users"
+            echo "================================"
+
+            sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null <<'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+
+            <tomcat-users
+                xmlns="http://tomcat.apache.org/xml"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
+                version="1.0">
+
+                <role rolename="manager-gui"/>
+                <role rolename="manager-script"/>
+                <role rolename="manager-jmx"/>
+                <role rolename="manager-status"/>
+
+                <role rolename="admin-gui"/>
+                <role rolename="admin-script"/>
+
+                <user username="admin"
+                      password="${{ secrets.TOMCAT_PASSWORD }}"
+                      roles="manager-gui,manager-script,manager-jmx,manager-status,admin-gui,admin-script"/>
+
+            </tomcat-users>
+            EOF
+
+
+            echo "================================"
+            echo "Configuring Tomcat Manager"
+            echo "================================"
+
+            sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+
+            <Context>
+
+                <CookieProcessor sameSiteCookies="strict" />
+
+            </Context>
+            EOF
+
+
+            echo "================================"
+            echo "Configuring Host Manager"
+            echo "================================"
+
+            sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<'EOF'
+            <?xml version="1.0" encoding="UTF-8"?>
+
+            <Context>
+
+                <CookieProcessor sameSiteCookies="strict" />
+
+            </Context>
+            EOF
+
+
+            echo "================================"
+            echo "Creating systemd service"
+            echo "================================"
+
+            sudo tee /etc/systemd/system/tomcat.service > /dev/null <<'EOF'
+            [Unit]
+            Description=Apache Tomcat Web Application Container
+            After=network.target
+
+            [Service]
+
+            Type=forking
+
+            User=tomcat
+            Group=tomcat
+
+            Environment="JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto"
+
+            Environment="CATALINA_HOME=/opt/tomcat"
+            Environment="CATALINA_BASE=/opt/tomcat"
+
+            Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+
+            ExecStart=/opt/tomcat/bin/startup.sh
+            ExecStop=/opt/tomcat/bin/shutdown.sh
+
+            Restart=on-failure
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+
+            echo "================================"
+            echo "Reloading systemd"
+            echo "================================"
+
+            sudo systemctl daemon-reload
+
+
+            echo "================================"
+            echo "Enabling Tomcat"
+            echo "================================"
+
+            sudo systemctl enable tomcat
+
+
+            echo "================================"
+            echo "Starting Tomcat"
+            echo "================================"
+
+            sudo systemctl restart tomcat
+
+
+            echo "================================"
+            echo "Checking Tomcat status"
+            echo "================================"
+
+            sudo systemctl status tomcat --no-pager
+
+
+            echo "================================"
+            echo "Checking port 8080"
+            echo "================================"
+
+            sudo ss -lntp | grep 8080 || true
+
+
+            echo "================================"
+            echo "Testing Tomcat"
+            echo "================================"
+
+            curl -I http://localhost:8080
+
+
+            echo "================================"
+            echo "Installation Completed"
+            echo "================================"
