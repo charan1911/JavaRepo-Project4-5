@@ -1,0 +1,313 @@
+name: SonarQube Quality Check
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ========================================
+      # 1. Checkout workflow repository
+      # ========================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ========================================
+      # 2. Connect to EC2
+      # ========================================
+
+      - name: Install and Run SonarQube
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+
+          script: |
+
+            echo "========================================"
+            echo "Starting SonarQube Setup"
+            echo "========================================"
+
+
+            # ========================================
+            # 3. Install Git
+            # ========================================
+
+            echo "Installing Git"
+
+            sudo dnf install git -y
+
+
+            # ========================================
+            # 4. Install Java 17
+            # ========================================
+
+            echo "Installing Java 17"
+
+            sudo dnf install java-17-amazon-corretto-devel -y
+
+            java -version
+
+
+            # ========================================
+            # 5. Install Docker
+            # ========================================
+
+            echo "Installing Docker"
+
+            sudo dnf install docker -y
+
+
+            # ========================================
+            # 6. Start Docker
+            # ========================================
+
+            sudo systemctl enable --now docker
+
+            sudo systemctl status docker --no-pager
+
+
+            # ========================================
+            # 7. Clone Java Project
+            # ========================================
+
+            echo "Cloning Java Project"
+
+            cd /home/ec2-user
+
+            sudo rm -rf JavaRepo-Project4-5
+
+            sudo git clone \
+              https://github.com/charan1911/JavaRepo-Project4-5.git
+
+
+            # ========================================
+            # 8. Set project ownership
+            # ========================================
+
+            sudo chown -R ec2-user:ec2-user \
+              /home/ec2-user/JavaRepo-Project4-5
+
+
+            cd /home/ec2-user/JavaRepo-Project4-5
+
+
+            # ========================================
+            # 9. Check project
+            # ========================================
+
+            echo "Project files"
+
+            ls -lah
+
+
+            # ========================================
+            # 10. Check Docker
+            # ========================================
+
+            echo "Docker version"
+
+            sudo docker --version
+
+
+            # ========================================
+            # 11. Remove old SonarQube container
+            # ========================================
+
+            echo "Removing old SonarQube container"
+
+            sudo docker rm -f sonarqube 2>/dev/null || true
+
+
+            # ========================================
+            # 12. Pull SonarQube image
+            # ========================================
+
+            echo "Pulling SonarQube"
+
+            sudo docker pull sonarqube:community
+
+
+            # ========================================
+            # 13. Start SonarQube
+            # ========================================
+
+            echo "Starting SonarQube"
+
+            sudo docker run -d \
+              --name sonarqube \
+              --restart unless-stopped \
+              -p 9000:9000 \
+              sonarqube:community
+
+
+            # ========================================
+            # 14. Check container
+            # ========================================
+
+            echo "SonarQube container"
+
+            sudo docker ps
+
+
+            # ========================================
+            # 15. Wait for SonarQube
+            # ========================================
+
+            echo "Waiting for SonarQube to start..."
+
+            for i in {1..30}
+            do
+
+              STATUS=$(curl -s \
+                http://localhost:9000/api/system/status \
+                | grep -o '"status":"[^"]*"' \
+                | head -1)
+
+              echo "SonarQube status: $STATUS"
+
+              if echo "$STATUS" | grep -q '"status":"UP"'
+              then
+                echo "SonarQube is UP"
+                break
+              fi
+
+              sleep 10
+
+            done
+
+
+            # ========================================
+            # 16. Show SonarQube logs
+            # ========================================
+
+            echo "SonarQube logs"
+
+            sudo docker logs \
+              --tail 50 \
+              sonarqube
+
+
+            # ========================================
+            # 17. Check Java project
+            # ========================================
+
+            cd /home/ec2-user/JavaRepo-Project4-5
+
+            echo "Checking project"
+
+            ls -lah
+
+
+            # ========================================
+            # 18. Build Java project
+            # ========================================
+
+            echo "Building Java project"
+
+            if [ -f mvnw ]
+            then
+
+              chmod +x mvnw
+
+              ./mvnw clean verify -DskipTests
+
+            elif [ -f pom.xml ]
+            then
+
+              sudo dnf install maven -y
+
+              mvn clean verify -DskipTests
+
+            else
+
+              echo "pom.xml not found"
+
+              exit 1
+
+            fi
+
+
+            # ========================================
+            # 19. Install Sonar Scanner
+            # ========================================
+
+            echo "Installing Sonar Scanner"
+
+            sudo dnf install unzip wget -y
+
+            cd /tmp
+
+            sudo rm -rf sonar-scanner*
+
+            wget -q \
+              https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-7.2.0.4588-linux-x64.zip
+
+            unzip -q sonar-scanner-cli-7.2.0.4588-linux-x64.zip
+
+            sudo mv sonar-scanner-7.2.0.4588-linux-x64 \
+              /opt/sonar-scanner
+
+
+            # ========================================
+            # 20. Configure Sonar Scanner
+            # ========================================
+
+            sudo tee /opt/sonar-scanner/conf/sonar-scanner.properties > /dev/null <<EOF
+
+            sonar.host.url=http://localhost:9000
+
+            EOF
+
+
+            # ========================================
+            # 21. Add Sonar Scanner PATH
+            # ========================================
+
+            export PATH=$PATH:/opt/sonar-scanner/bin
+
+
+            echo "Sonar Scanner version"
+
+            sonar-scanner --version
+
+
+            # ========================================
+            # 22. Run SonarQube analysis
+            # ========================================
+
+            cd /home/ec2-user/JavaRepo-Project4-5
+
+            echo "Running SonarQube analysis"
+
+            sonar-scanner \
+              -Dsonar.projectKey=JavaRepo-Project4-5 \
+              -Dsonar.projectName=JavaRepo-Project4-5 \
+              -Dsonar.sources=src \
+              -Dsonar.java.binaries=target/classes \
+              -Dsonar.host.url=http://localhost:9000
+
+
+            # ========================================
+            # 23. Final status
+            # ========================================
+
+            echo "========================================"
+            echo "SonarQube Analysis Completed"
+            echo "========================================"
+
+            echo "SonarQube URL:"
+            echo "http://YOUR-EC2-PUBLIC-IP:9000"
+
+            echo "========================================"
