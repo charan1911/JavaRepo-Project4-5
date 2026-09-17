@@ -28,6 +28,8 @@ jobs:
 
           script: |
 
+            set -e
+
             echo "=========================================="
             echo "Starting SonarQube Setup"
             echo "=========================================="
@@ -93,7 +95,6 @@ jobs:
             # 7. Install Maven
             # ==========================================
 
-            
             echo "Installing Maven..."
 
             sudo dnf install maven -y
@@ -271,14 +272,44 @@ jobs:
 
 
             rm -rf sonar-scanner*
+            rm -f sonar-scanner.zip
 
 
-            wget -q \
+            echo "Downloading Sonar Scanner..."
+
+
+            curl -fL \
+              -o sonar-scanner.zip \
               https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-7.2.0.4588-linux-x64.zip
 
 
-            unzip -q \
-              sonar-scanner-cli-7.2.0.4588-linux-x64.zip
+            echo "Checking downloaded file..."
+
+
+            ls -lh sonar-scanner.zip
+
+
+            # ==========================================
+            # 16. Extract Sonar Scanner
+            # ==========================================
+
+            echo "Extracting Sonar Scanner..."
+
+
+            unzip -q sonar-scanner.zip
+
+
+            echo "Checking extracted files..."
+
+
+            ls -lah
+
+
+            # ==========================================
+            # 17. Install Sonar Scanner
+            # ==========================================
+
+            echo "Installing Sonar Scanner..."
 
 
             sudo rm -rf /opt/sonar-scanner
@@ -294,8 +325,39 @@ jobs:
 
 
             # ==========================================
-            # 16. Configure Sonar Scanner
+            # 18. Verify Sonar Scanner
             # ==========================================
+
+            echo "Checking Sonar Scanner installation..."
+
+
+            if [ ! -f /opt/sonar-scanner/bin/sonar-scanner ]
+            then
+
+              echo "Sonar Scanner installation failed."
+
+              exit 1
+
+            fi
+
+
+            export PATH=$PATH:/opt/sonar-scanner/bin
+
+
+            echo "Sonar Scanner version:"
+
+
+            sonar-scanner --version
+
+
+            # ==========================================
+            # 19. Configure Sonar Scanner
+            # ==========================================
+
+            echo "=========================================="
+            echo "Configuring Sonar Scanner"
+            echo "=========================================="
+
 
             sudo tee \
               /opt/sonar-scanner/conf/sonar-scanner.properties \
@@ -306,16 +368,8 @@ jobs:
             EOF
 
 
-            export PATH=$PATH:/opt/sonar-scanner/bin
-
-
-            echo "Sonar Scanner version:"
-
-            sonar-scanner --version
-
-
             # ==========================================
-            # 17. Run SonarQube Analysis
+            # 20. Run SonarQube Analysis
             # ==========================================
 
             echo "=========================================="
@@ -336,7 +390,7 @@ jobs:
 
 
             # ==========================================
-            # 18. Final SonarQube status
+            # 21. Final SonarQube status
             # ==========================================
 
             echo "=========================================="
@@ -351,6 +405,10 @@ jobs:
             echo ""
 
 
+            # ==========================================
+            # 22. SonarQube URL
+            # ==========================================
+
             echo "=========================================="
             echo "SonarQube URL"
             echo "=========================================="
@@ -358,6 +416,10 @@ jobs:
 
             echo "http://${{ secrets.EC2_HOST }}:9000"
 
+
+            # ==========================================
+            # 23. Workflow Completed
+            # ==========================================
 
             echo "=========================================="
             echo "Workflow Completed Successfully"
