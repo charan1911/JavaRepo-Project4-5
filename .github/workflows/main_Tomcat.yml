@@ -16,7 +16,7 @@ jobs:
     steps:
 
       # =====================================================
-      # 1. Checkout Code
+      # 1. Checkout Repository
       # =====================================================
 
       - name: Checkout code
@@ -24,7 +24,7 @@ jobs:
 
 
       # =====================================================
-      # 2. Setup Java
+      # 2. Setup Java on GitHub Runner
       # =====================================================
 
       - name: Setup Java 17
@@ -36,27 +36,27 @@ jobs:
 
 
       # =====================================================
-      # 3. Build WAR
+      # 3. Build WAR File
       # =====================================================
 
       - name: Build WAR
         run: |
 
-          echo "================================"
+          echo "=========================================="
           echo "Building Java WAR"
-          echo "================================"
+          echo "=========================================="
 
           mvn clean package -DskipTests
 
-          echo "================================"
-          echo "WAR FILE"
-          echo "================================"
+          echo "=========================================="
+          echo "Generated WAR Files"
+          echo "=========================================="
 
           ls -lh target/*.war
 
 
       # =====================================================
-      # 4. Install / Configure Tomcat
+      # 4. Connect to EC2
       # =====================================================
 
       - name: Install and Configure Tomcat
@@ -72,9 +72,9 @@ jobs:
 
             set -e
 
-            echo "================================"
-            echo "Java"
-            echo "================================"
+            echo "=========================================="
+            echo "Java Version"
+            echo "=========================================="
 
             java -version
 
@@ -83,9 +83,9 @@ jobs:
             # Create Tomcat User
             # =================================================
 
-            echo "================================"
+            echo "=========================================="
             echo "Creating Tomcat User"
-            echo "================================"
+            echo "=========================================="
 
             if ! id tomcat >/dev/null 2>&1; then
 
@@ -93,6 +93,10 @@ jobs:
                 -d /opt/tomcat \
                 -s /bin/false \
                 tomcat
+
+            else
+
+              echo "Tomcat user already exists."
 
             fi
 
@@ -103,9 +107,9 @@ jobs:
 
             if [ ! -f /opt/tomcat/bin/startup.sh ]; then
 
-              echo "================================"
+              echo "=========================================="
               echo "Installing Tomcat"
-              echo "================================"
+              echo "=========================================="
 
               cd /tmp
 
@@ -115,44 +119,46 @@ jobs:
                 https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
 
 
-              # -----------------------------------------------
-              # Remove old installation
-              # -----------------------------------------------
+              echo "=========================================="
+              echo "Removing Old Tomcat Directory"
+              echo "=========================================="
 
               sudo rm -rf /opt/tomcat
 
               sudo mkdir -p /opt/tomcat
 
 
-              # -----------------------------------------------
-              # Extract
-              # -----------------------------------------------
+              echo "=========================================="
+              echo "Extracting Tomcat"
+              echo "=========================================="
 
               sudo tar -xzf apache-tomcat-10.1.60.tar.gz \
                 --strip-components=1 \
                 -C /opt/tomcat
 
 
-              # -----------------------------------------------
-              # Verify extraction
-              # -----------------------------------------------
-
-              echo "Tomcat files:"
+              echo "=========================================="
+              echo "Checking Tomcat Files"
+              echo "=========================================="
 
               sudo ls -lah /opt/tomcat
 
-              echo "Tomcat bin files:"
+              echo "Tomcat bin directory:"
 
               sudo ls -lah /opt/tomcat/bin
 
 
-              # -----------------------------------------------
-              # Verify startup script
-              # -----------------------------------------------
+              # =================================================
+              # Verify Tomcat Installation
+              # =================================================
 
               if [ ! -f /opt/tomcat/bin/startup.sh ]; then
 
-                echo "ERROR: Tomcat extraction failed."
+                echo "=========================================="
+                echo "ERROR: Tomcat Installation Failed"
+                echo "=========================================="
+
+                sudo find /opt/tomcat -maxdepth 2 -type f | head -100
 
                 exit 1
 
@@ -160,20 +166,20 @@ jobs:
 
             else
 
-              echo "================================"
-              echo "Tomcat already installed"
-              echo "================================"
+              echo "=========================================="
+              echo "Tomcat Already Installed"
+              echo "=========================================="
 
             fi
 
 
             # =================================================
-            # Permissions
+            # Tomcat Permissions
             # =================================================
 
-            echo "================================"
+            echo "=========================================="
             echo "Setting Tomcat Permissions"
-            echo "================================"
+            echo "=========================================="
 
             sudo chown -R tomcat:tomcat /opt/tomcat
 
@@ -181,12 +187,12 @@ jobs:
 
 
             # =================================================
-            # Tomcat Users
+            # Configure Tomcat Users
             # =================================================
 
-            echo "================================"
+            echo "=========================================="
             echo "Configuring Tomcat Users"
-            echo "================================"
+            echo "=========================================="
 
             sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null <<'EOF'
 
@@ -216,8 +222,12 @@ jobs:
 
 
             # =================================================
-            # Manager
+            # Configure Manager
             # =================================================
+
+            echo "=========================================="
+            echo "Configuring Tomcat Manager"
+            echo "=========================================="
 
             sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<'EOF'
 
@@ -233,8 +243,12 @@ jobs:
 
 
             # =================================================
-            # Host Manager
+            # Configure Host Manager
             # =================================================
+
+            echo "=========================================="
+            echo "Configuring Host Manager"
+            echo "=========================================="
 
             sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<'EOF'
 
@@ -250,12 +264,12 @@ jobs:
 
 
             # =================================================
-            # Systemd Service
+            # Create Systemd Service
             # =================================================
 
-            echo "================================"
-            echo "Creating Tomcat Service"
-            echo "================================"
+            echo "=========================================="
+            echo "Creating Tomcat Systemd Service"
+            echo "=========================================="
 
             sudo tee /etc/systemd/system/tomcat.service > /dev/null <<'EOF'
 
@@ -290,9 +304,9 @@ jobs:
             # Start Tomcat
             # =================================================
 
-            echo "================================"
+            echo "=========================================="
             echo "Starting Tomcat"
-            echo "================================"
+            echo "=========================================="
 
             sudo systemctl daemon-reload
 
@@ -304,21 +318,36 @@ jobs:
 
 
             # =================================================
-            # Status
+            # Check Tomcat Status
             # =================================================
+
+            echo "=========================================="
+            echo "Tomcat Status"
+            echo "=========================================="
 
             sudo systemctl status tomcat --no-pager
 
 
             # =================================================
-            # Port
+            # Check Port 8080
             # =================================================
 
-            echo "================================"
-            echo "Port 8080"
-            echo "================================"
+            echo "=========================================="
+            echo "Checking Port 8080"
+            echo "=========================================="
 
             sudo ss -lntp | grep 8080 || true
+
+
+            # =================================================
+            # Test Tomcat ROOT
+            # =================================================
+
+            echo "=========================================="
+            echo "Testing Tomcat ROOT"
+            echo "=========================================="
+
+            curl -I http://localhost:8080/ || true
 
 
       # =====================================================
@@ -343,7 +372,7 @@ jobs:
       # 6. Deploy WAR
       # =====================================================
 
-      - name: Deploy WAR
+      - name: Deploy WAR to Tomcat
         uses: appleboy/ssh-action@v1.2.2
 
         with:
@@ -356,71 +385,212 @@ jobs:
 
             set -e
 
-            echo "================================"
+            echo "=========================================="
             echo "Deploying neontask.war"
-            echo "================================"
+            echo "=========================================="
 
 
-            # Remove old deployment
+            # =================================================
+            # Remove Previous Application
+            # =================================================
+
+            echo "Removing previous deployment..."
 
             sudo rm -rf /opt/tomcat/webapps/neontask
 
             sudo rm -f /opt/tomcat/webapps/neontask.war
 
 
-            # Copy new WAR
+            # =================================================
+            # Copy New WAR
+            # =================================================
+
+            echo "Copying new WAR..."
 
             sudo cp \
               /tmp/neontask.war \
               /opt/tomcat/webapps/neontask.war
 
 
-            # Set ownership
+            # =================================================
+            # Set Ownership
+            # =================================================
 
             sudo chown tomcat:tomcat \
               /opt/tomcat/webapps/neontask.war
 
 
-            # Restart Tomcat
+            echo "WAR copied successfully."
 
-            echo "================================"
+
+            # =================================================
+            # Restart Tomcat
+            # =================================================
+
+            echo "=========================================="
             echo "Restarting Tomcat"
-            echo "================================"
+            echo "=========================================="
 
             sudo systemctl restart tomcat
 
 
-            echo "Waiting for deployment..."
+            echo "Waiting for Tomcat deployment..."
 
             sleep 15
 
 
             # =================================================
-            # Check deployment
+            # Check Tomcat Status
             # =================================================
 
-            echo "================================"
-            echo "Tomcat Webapps"
-            echo "================================"
+            echo "=========================================="
+            echo "Tomcat Status"
+            echo "=========================================="
+
+            sudo systemctl status tomcat --no-pager
+
+
+            # =================================================
+            # Check Webapps Directory
+            # =================================================
+
+            echo "=========================================="
+            echo "Tomcat Webapps Directory"
+            echo "=========================================="
 
             sudo ls -lah /opt/tomcat/webapps/
 
 
             # =================================================
-            # Test application
+            # Check WAR File
             # =================================================
 
-            echo "================================"
-            echo "Testing Application"
-            echo "================================"
+            echo "=========================================="
+            echo "Checking WAR"
+            echo "=========================================="
+
+            if [ ! -f /opt/tomcat/webapps/neontask.war ]; then
+
+              echo "ERROR: neontask.war was not copied."
+
+              exit 1
+
+            fi
+
+            sudo ls -lh \
+              /opt/tomcat/webapps/neontask.war
+
+
+            # =================================================
+            # Check Application Directory
+            # =================================================
+
+            echo "=========================================="
+            echo "Checking Extracted Application"
+            echo "=========================================="
+
+            if [ -d /opt/tomcat/webapps/neontask ]; then
+
+              echo "Application directory exists."
+
+              sudo ls -lah \
+                /opt/tomcat/webapps/neontask
+
+            else
+
+              echo "=========================================="
+              echo "ERROR: Application Was Not Deployed"
+              echo "=========================================="
+
+              echo "Tomcat logs:"
+
+              sudo tail -100 \
+                /opt/tomcat/logs/catalina.out
+
+              exit 1
+
+            fi
+
+
+            # =================================================
+            # Check Application Contents
+            # =================================================
+
+            echo "=========================================="
+            echo "Application Contents"
+            echo "=========================================="
+
+            sudo find \
+              /opt/tomcat/webapps/neontask \
+              -maxdepth 2 \
+              -type f \
+              | head -100
+
+
+            # =================================================
+            # Test Tomcat
+            # =================================================
+
+            echo "=========================================="
+            echo "Testing Tomcat"
+            echo "=========================================="
 
             curl -I \
-              http://localhost:8080/neontask/
+              http://localhost:8080/
 
 
-            echo "================================"
-            echo "DEPLOYMENT SUCCESS"
-            echo "================================"
+            # =================================================
+            # Test Application
+            # =================================================
+
+            echo "=========================================="
+            echo "Testing neontask Application"
+            echo "=========================================="
+
+            HTTP_STATUS=$(curl -s -o /tmp/neontask_response.txt \
+              -w "%{http_code}" \
+              http://localhost:8080/neontask/)
+
+            echo "HTTP Status: $HTTP_STATUS"
+
+
+            if [ "$HTTP_STATUS" = "200" ] || \
+               [ "$HTTP_STATUS" = "302" ] || \
+               [ "$HTTP_STATUS" = "301" ]
+            then
+
+              echo "=========================================="
+              echo "APPLICATION DEPLOYED SUCCESSFULLY"
+              echo "=========================================="
+
+            else
+
+              echo "=========================================="
+              echo "APPLICATION RETURNED HTTP $HTTP_STATUS"
+              echo "=========================================="
+
+              echo "Response:"
+
+              cat /tmp/neontask_response.txt
+
+              echo ""
+              echo "Tomcat logs:"
+
+              sudo tail -100 \
+                /opt/tomcat/logs/catalina.out
+
+              exit 1
+
+            fi
+
+
+            # =================================================
+            # Final
+            # =================================================
+
+            echo "=========================================="
+            echo "DEPLOYMENT COMPLETED"
+            echo "=========================================="
 
             echo "Application URL:"
 
