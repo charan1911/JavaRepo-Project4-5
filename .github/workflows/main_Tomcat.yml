@@ -1,28 +1,67 @@
-name: Install Java and Tomcat
+name: Build and Deploy Java WAR to Tomcat
 
 on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 jobs:
-  install-tomcat:
+
+  deploy-tomcat:
+
     runs-on: ubuntu-latest
 
     steps:
 
+      # =====================================================
+      # 1. Checkout Repository
+      # =====================================================
 
-
-
-
-      # 1. Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Connect to EC2 and install Java + Tomcat
-      - name: Install Java and Tomcat
+
+      # =====================================================
+      # 2. Setup Java on GitHub Runner
+      # =====================================================
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+
+      # =====================================================
+      # 3. Build WAR File
+      # =====================================================
+
+      - name: Build WAR file
+        run: |
+
+          echo "================================"
+          echo "Building Java WAR"
+          echo "================================"
+
+          mvn clean package -DskipTests
+
+          echo "================================"
+          echo "Generated WAR files"
+          echo "================================"
+
+          ls -lh target/*.war
+
+
+      # =====================================================
+      # 4. Connect to EC2
+      # =====================================================
+
+      - name: Install Java and Tomcat on EC2
         uses: appleboy/ssh-action@v1.2.2
+
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -31,12 +70,7 @@ jobs:
 
           script: |
 
-            echo "================================"
-            echo "Updating system"
-            echo "================================"
-
-            sudo dnf update -y
-
+            set -e
 
             echo "================================"
             echo "Installing Java 17"
@@ -44,20 +78,30 @@ jobs:
 
             sudo dnf install java-17-amazon-corretto-devel -y
 
-
-            echo "Checking Java version"
-
             java -version
 
 
+            # =====================================================
+            # Create Tomcat User
+            # =====================================================
+
             echo "================================"
-            echo "Creating Tomcat user"
+            echo "Creating Tomcat User"
             echo "================================"
 
             if ! id tomcat >/dev/null 2>&1; then
-              sudo useradd -r -m -U -d /opt/tomcat -s /bin/false tomcat
+
+              sudo useradd -r -m -U \
+                -d /opt/tomcat \
+                -s /bin/false \
+                tomcat
+
             fi
 
+
+            # =====================================================
+            # Download Tomcat
+            # =====================================================
 
             echo "================================"
             echo "Downloading Tomcat"
@@ -67,8 +111,13 @@ jobs:
 
             sudo rm -f apache-tomcat-10.1.60.tar.gz
 
-            sudo curl -O https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
+            sudo curl -fL -O \
+              https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
 
+
+            # =====================================================
+            # Install Tomcat
+            # =====================================================
 
             echo "================================"
             echo "Installing Tomcat"
@@ -83,10 +132,12 @@ jobs:
               -C /opt/tomcat
 
 
-              
+            # =====================================================
+            # Tomcat Permissions
+            # =====================================================
 
             echo "================================"
-            echo "Setting Tomcat permissions"
+            echo "Setting Tomcat Permissions"
             echo "================================"
 
             sudo chown -R tomcat:tomcat /opt/tomcat
@@ -94,11 +145,16 @@ jobs:
             sudo chmod +x /opt/tomcat/bin/*.sh
 
 
+            # =====================================================
+            # Tomcat Users
+            # =====================================================
+
             echo "================================"
-            echo "Configuring Tomcat users"
+            echo "Configuring Tomcat Users"
             echo "================================"
 
             sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null <<'EOF'
+
             <?xml version="1.0" encoding="UTF-8"?>
 
             <tomcat-users
@@ -120,14 +176,20 @@ jobs:
                       roles="manager-gui,manager-script,manager-jmx,manager-status,admin-gui,admin-script"/>
 
             </tomcat-users>
+
             EOF
 
+
+            # =====================================================
+            # Manager Configuration
+            # =====================================================
 
             echo "================================"
             echo "Configuring Tomcat Manager"
             echo "================================"
 
             sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<'EOF'
+
             <?xml version="1.0" encoding="UTF-8"?>
 
             <Context privileged="true">
@@ -135,14 +197,16 @@ jobs:
                 <CookieProcessor sameSiteCookies="strict" />
 
             </Context>
+
             EOF
 
 
-            echo "================================"
-            echo "Configuring Host Manager"
-            echo "================================"
+            # =====================================================
+            # Host Manager Configuration
+            # =====================================================
 
             sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<'EOF'
+
             <?xml version="1.0" encoding="UTF-8"?>
 
             <Context privileged="true">
@@ -150,14 +214,20 @@ jobs:
                 <CookieProcessor sameSiteCookies="strict" />
 
             </Context>
+
             EOF
 
 
+            # =====================================================
+            # Create Systemd Service
+            # =====================================================
+
             echo "================================"
-            echo "Creating systemd service"
+            echo "Creating Tomcat Service"
             echo "================================"
 
             sudo tee /etc/systemd/system/tomcat.service > /dev/null <<'EOF'
+
             [Unit]
             Description=Apache Tomcat Web Application Container
             After=network.target
@@ -170,10 +240,8 @@ jobs:
             Group=tomcat
 
             Environment="JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto"
-
             Environment="CATALINA_HOME=/opt/tomcat"
             Environment="CATALINA_BASE=/opt/tomcat"
-
             Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
 
             ExecStart=/opt/tomcat/bin/startup.sh
@@ -183,51 +251,131 @@ jobs:
 
             [Install]
             WantedBy=multi-user.target
+
             EOF
 
 
-            echo "================================"
-            echo "Reloading systemd"
-            echo "================================"
-
-            sudo systemctl daemon-reload
-
-
-            echo "================================"
-            echo "Enabling Tomcat"
-            echo "================================"
-
-            sudo systemctl enable tomcat
-
+            # =====================================================
+            # Start Tomcat
+            # =====================================================
 
             echo "================================"
             echo "Starting Tomcat"
             echo "================================"
 
+            sudo systemctl daemon-reload
+
+            sudo systemctl enable tomcat
+
             sudo systemctl restart tomcat
 
+            sleep 10
+
+
+            # =====================================================
+            # Check Tomcat
+            # =====================================================
 
             echo "================================"
-            echo "Checking Tomcat status"
+            echo "Tomcat Status"
             echo "================================"
 
             sudo systemctl status tomcat --no-pager
 
-
             echo "================================"
-            echo "Checking port 8080"
+            echo "Checking Port 8080"
             echo "================================"
 
             sudo ss -lntp | grep 8080 || true
 
 
+            # =====================================================
+            # Create Deployment Directory
+            # =====================================================
+
+            sudo mkdir -p /opt/tomcat/webapps
+
+
+      # =====================================================
+      # 5. Copy WAR to EC2
+      # =====================================================
+
+      - name: Copy WAR to EC2
+        uses: appleboy/scp-action@v0.1.7
+
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+
+          source: "target/neontask.war"
+
+          target: "/tmp/"
+
+
+      # =====================================================
+      # 6. Deploy WAR
+      # =====================================================
+
+      - name: Deploy WAR to Tomcat
+        uses: appleboy/ssh-action@v1.2.2
+
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+
+          script: |
+
+            set -e
+
             echo "================================"
-            echo "Testing Tomcat"
+            echo "Deploying WAR"
             echo "================================"
 
-            curl -I http://localhost:8080
+            sudo rm -rf /opt/tomcat/webapps/neontask
+
+            sudo rm -f /opt/tomcat/webapps/neontask.war
+
+            sudo cp /tmp/neontask.war \
+              /opt/tomcat/webapps/neontask.war
+
+            sudo chown tomcat:tomcat \
+              /opt/tomcat/webapps/neontask.war
 
 
             echo "================================"
-            echo "Installation Completed"
+            echo "Restarting Tomcat"
             echo "================================"
+
+            sudo systemctl restart tomcat
+
+            echo "Waiting for deployment..."
+
+            sleep 15
+
+
+            echo "================================"
+            echo "Checking WAR"
+            echo "================================"
+
+            ls -lh /opt/tomcat/webapps/
+
+
+            echo "================================"
+            echo "Testing Application"
+            echo "================================"
+
+            curl -I \
+              http://localhost:8080/neontask/
+
+
+            echo "================================"
+            echo "Deployment Completed"
+            echo "================================"
+
+            echo "Application URL:"
+
+            echo "http://${{ secrets.EC2_HOST }}:8080/neontask/"
