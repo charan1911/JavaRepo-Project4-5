@@ -596,104 +596,48 @@ jobs:
 
 
           # ==================================================
-          # MANAGER REMOTE ACCESS
+          # CONFIGURE MANAGER + HOST MANAGER
           # ==================================================
 
           echo "======================================"
-          echo "CONFIGURE MANAGER REMOTE ACCESS"
+          echo "CONFIGURE MANAGER"
           echo "======================================"
 
           MANAGER_CONTEXT="/opt/tomcat/webapps/manager/META-INF/context.xml"
 
+          sudo mkdir -p /opt/tomcat/webapps/manager/META-INF
 
-          if [ -f "$MANAGER_CONTEXT" ]; then
-
-              echo "Manager context.xml found."
-
-              sudo cp \
-                "$MANAGER_CONTEXT" \
-                "${MANAGER_CONTEXT}.backup"
-
-
-              sudo sed -i \
-                '/RemoteAddrValve/d' \
-                "$MANAGER_CONTEXT"
-
-
-              sudo sed -i \
-                '/RemoteCIDRValve/d' \
-                "$MANAGER_CONTEXT"
-
-
-          else
-
-              echo "Manager context.xml missing."
-
-              sudo mkdir -p \
-                /opt/tomcat/webapps/manager/META-INF
-
-
-              sudo tee "$MANAGER_CONTEXT" > /dev/null << 'XML'
+          sudo tee "$MANAGER_CONTEXT" > /dev/null << 'XML'
           <?xml version="1.0" encoding="UTF-8"?>
-
-          <Context>
+          <Context privileged="true">
           </Context>
           XML
 
-          fi
 
-
-          # ==================================================
-          # HOST MANAGER REMOTE ACCESS
-          # ==================================================
+          echo "Manager context configured."
 
           echo "======================================"
-          echo "CONFIGURE HOST MANAGER REMOTE ACCESS"
+          echo "CONFIGURE HOST MANAGER"
           echo "======================================"
 
           HOST_MANAGER_CONTEXT="/opt/tomcat/webapps/host-manager/META-INF/context.xml"
 
+          sudo mkdir -p /opt/tomcat/webapps/host-manager/META-INF
 
-          if [ -f "$HOST_MANAGER_CONTEXT" ]; then
-
-              echo "Host Manager context.xml found."
-
-              sudo cp \
-                "$HOST_MANAGER_CONTEXT" \
-                "${HOST_MANAGER_CONTEXT}.backup"
-
-
-              sudo sed -i \
-                '/RemoteAddrValve/d' \
-                "$HOST_MANAGER_CONTEXT"
-
-
-              sudo sed -i \
-                '/RemoteCIDRValve/d' \
-                "$HOST_MANAGER_CONTEXT"
-
-
-          else
-
-              echo "Host Manager context.xml missing."
-
-              sudo mkdir -p \
-                /opt/tomcat/webapps/host-manager/META-INF
-
-
-              sudo tee "$HOST_MANAGER_CONTEXT" > /dev/null << 'XML'
+          sudo tee "$HOST_MANAGER_CONTEXT" > /dev/null << 'XML'
           <?xml version="1.0" encoding="UTF-8"?>
-
-          <Context>
+          <Context privileged="true">
           </Context>
           XML
 
-          fi
+
+          echo "Host Manager context configured."
 
 
           # ==================================================
           # FIX OWNERSHIP
           # ==================================================
+
 
           echo "======================================"
           echo "FIX TOMCAT OWNERSHIP"
@@ -1105,7 +1049,7 @@ jobs:
           echo "CHECK NEONTASK DIRECTORY"
           echo "======================================"
 
-          if [ -d /opt/tomcat/webapps/neontask ]; then
+          if sudo test -d /opt/tomcat/webapps/neontask; then
 
               echo "neontask application directory exists."
 
@@ -1124,7 +1068,7 @@ jobs:
           echo "CHECK NEONTASK WAR"
           echo "======================================"
 
-          if [ -f /opt/tomcat/webapps/neontask.war ]; then
+          if sudo test -f /opt/tomcat/webapps/neontask.war; then
 
               echo "neontask.war exists."
 
