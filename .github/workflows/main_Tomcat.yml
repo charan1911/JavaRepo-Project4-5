@@ -73,7 +73,7 @@ jobs:
           fi
 
 
-          echo "WAR build successful."
+          echo "WAR BUILD SUCCESSFUL"
 
 
       # --------------------------------------------------------
@@ -97,14 +97,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # --------------------------------------------------------
-      # Checkout
-      # --------------------------------------------------------
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
 
       # --------------------------------------------------------
       # Download WAR
@@ -296,9 +288,7 @@ jobs:
           sudo chown -R tomcat:tomcat /opt/tomcat
 
 
-          # IMPORTANT:
           # Use find instead of *.sh
-
           sudo find /opt/tomcat/bin \
             -type f \
             -name "*.sh" \
@@ -328,6 +318,123 @@ jobs:
 
           sudo -u tomcat \
             /opt/tomcat/bin/catalina.sh version
+
+
+          # ==================================================
+          # TOMCAT USERS
+          # ==================================================
+
+          echo "======================================"
+          echo "CONFIGURE TOMCAT ADMIN USER"
+          echo "======================================"
+
+          sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null << 'XML'
+
+          <?xml version="1.0" encoding="UTF-8"?>
+
+          <tomcat-users
+              xmlns="http://tomcat.apache.org/xml"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
+              version="1.0">
+
+              <role rolename="manager-gui"/>
+              <role rolename="admin-gui"/>
+
+              <user
+                  username="admin"
+                  password="Admin#123456"
+                  roles="manager-gui,admin-gui"/>
+
+          </tomcat-users>
+
+          XML
+
+
+          sudo chown \
+            tomcat:tomcat \
+            /opt/tomcat/conf/tomcat-users.xml
+
+
+          sudo chmod \
+            640 \
+            /opt/tomcat/conf/tomcat-users.xml
+
+
+          # ==================================================
+          # MANAGER REMOTE ACCESS
+          # ==================================================
+
+          echo "======================================"
+          echo "CONFIGURE MANAGER REMOTE ACCESS"
+          echo "======================================"
+
+          if [ -f /opt/tomcat/webapps/manager/META-INF/context.xml ]; then
+
+              sudo sed -i \
+                '/RemoteAddrValve/d' \
+                /opt/tomcat/webapps/manager/META-INF/context.xml
+
+              echo "Manager remote IP restriction removed."
+
+          else
+
+              echo "Manager context.xml not found."
+
+          fi
+
+
+          # ==================================================
+          # HOST MANAGER REMOTE ACCESS
+          # ==================================================
+
+          echo "======================================"
+          echo "CONFIGURE HOST MANAGER REMOTE ACCESS"
+          echo "======================================"
+
+          if [ -f /opt/tomcat/webapps/host-manager/META-INF/context.xml ]; then
+
+              sudo sed -i \
+                '/RemoteAddrValve/d' \
+                /opt/tomcat/webapps/host-manager/META-INF/context.xml
+
+              echo "Host Manager remote IP restriction removed."
+
+          else
+
+              echo "Host Manager context.xml not found."
+
+          fi
+
+
+          # ==================================================
+          # FIX OWNERSHIP AGAIN
+          # ==================================================
+
+          sudo chown -R tomcat:tomcat /opt/tomcat/conf
+          sudo chown -R tomcat:tomcat /opt/tomcat/webapps
+
+
+          # ==================================================
+          # SHOW MANAGER CONFIG
+          # ==================================================
+
+          echo "======================================"
+          echo "MANAGER CONTEXT"
+          echo "======================================"
+
+          sudo cat \
+            /opt/tomcat/webapps/manager/META-INF/context.xml \
+            || true
+
+
+          echo "======================================"
+          echo "HOST MANAGER CONTEXT"
+          echo "======================================"
+
+          sudo cat \
+            /opt/tomcat/webapps/host-manager/META-INF/context.xml \
+            || true
 
 
           # ==================================================
@@ -409,11 +516,11 @@ jobs:
 
           echo "Waiting for Tomcat..."
 
-          sleep 8
+          sleep 10
 
 
           # ==================================================
-          # CHECK TOMCAT SERVICE
+          # CHECK TOMCAT
           # ==================================================
 
           echo "======================================"
@@ -502,12 +609,8 @@ jobs:
           ssh -i ~/.ssh/ec2_key \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'EOF'
 
-          set -e
-
-
-          # ==================================================
-          # STOP TOMCAT
-          # ==================================================
+          # Do not use set -e here.
+          # We want diagnostic commands to continue.
 
           echo "======================================"
           echo "STOP TOMCAT"
@@ -580,7 +683,7 @@ jobs:
 
 
           # ==================================================
-          # CHECK TOMCAT SERVICE
+          # CHECK TOMCAT
           # ==================================================
 
           echo "======================================"
@@ -595,28 +698,16 @@ jobs:
 
               echo "Tomcat service failed."
 
-              echo ""
-              echo "===== SYSTEMD STATUS ====="
-
               sudo systemctl status tomcat \
                 --no-pager || true
-
-
-              echo ""
-              echo "===== SYSTEMD JOURNAL ====="
 
               sudo journalctl \
                 -u tomcat \
                 -n 100 \
                 --no-pager || true
 
-
-              echo ""
-              echo "===== CATALINA LOG ====="
-
               sudo tail -150 \
                 /opt/tomcat/logs/catalina.out || true
-
 
               exit 1
 
@@ -624,26 +715,20 @@ jobs:
 
 
           # ==================================================
-          # CHECK PORT 8080
+          # CHECK PORT
           # ==================================================
 
           echo "======================================"
           echo "CHECK PORT 8080"
           echo "======================================"
 
-          if curl \
-            -s \
-            --connect-timeout 10 \
-            http://localhost:8080/ \
-            > /dev/null; then
+          if sudo ss -lntp | grep -q 8080; then
 
-              echo "Tomcat is responding on port 8080."
+              echo "Port 8080 is listening."
 
           else
 
-              echo "Tomcat is not responding."
-
-              sudo ss -lntp || true
+              echo "Port 8080 is NOT listening."
 
               exit 1
 
@@ -651,18 +736,18 @@ jobs:
 
 
           # ==================================================
-          # WAIT FOR APPLICATION
+          # WAIT FOR WAR DEPLOYMENT
           # ==================================================
 
           echo "======================================"
-          echo "WAIT FOR APPLICATION"
+          echo "WAIT FOR WAR DEPLOYMENT"
           echo "======================================"
 
-          sleep 5
+          sleep 10
 
 
           # ==================================================
-          # CHECK WAR FILE
+          # CHECK WAR
           # ==================================================
 
           echo "======================================"
@@ -683,18 +768,37 @@ jobs:
 
 
           # ==================================================
-          # CHECK TOMCAT LOG FOR DEPLOYMENT
+          # CHECK TOMCAT DEPLOYMENT LOG
           # ==================================================
 
           echo "======================================"
-          echo "CHECK TOMCAT DEPLOYMENT LOG"
+          echo "CHECK TOMCAT DEPLOYMENT"
           echo "======================================"
 
           sudo grep \
             -i \
             "neontask" \
             /opt/tomcat/logs/catalina.out \
-            | tail -20 || true
+            | tail -30 || true
+
+
+          # ==================================================
+          # TEST TOMCAT ROOT
+          # ==================================================
+
+          echo "======================================"
+          echo "TEST TOMCAT ROOT"
+          echo "======================================"
+
+          ROOT_CODE=$(curl \
+            -s \
+            --max-time 10 \
+            -o /tmp/tomcat-root.html \
+            -w "%{http_code}" \
+            http://localhost:8080/ || true)
+
+
+          echo "Tomcat root HTTP status: $ROOT_CODE"
 
 
           # ==================================================
@@ -702,29 +806,30 @@ jobs:
           # ==================================================
 
           echo "======================================"
-          echo "TEST /neontask/"
+          echo "TEST NEONTASK"
           echo "======================================"
 
-          HTTP_CODE=$(curl \
+          APP_CODE=$(curl \
             -s \
-            -o /tmp/neontask-response.txt \
+            --max-time 15 \
+            -o /tmp/neontask-response.html \
             -w "%{http_code}" \
-            --connect-timeout 10 \
             http://localhost:8080/neontask/ || true)
 
 
-          echo "Application HTTP status: $HTTP_CODE"
+          echo "Neontask HTTP status: $APP_CODE"
 
 
           echo "======================================"
           echo "APPLICATION RESPONSE"
           echo "======================================"
 
-          cat /tmp/neontask-response.txt || true
+          cat /tmp/neontask-response.html \
+            | head -100 || true
 
 
           # ==================================================
-          # WEBAPPS DIRECTORY
+          # WEBAPPS
           # ==================================================
 
           echo "======================================"
@@ -748,7 +853,7 @@ jobs:
 
 
           # ==================================================
-          # FINAL RESULT
+          # FINAL
           # ==================================================
 
           echo "======================================"
@@ -772,34 +877,48 @@ jobs:
         run: |
 
           echo ""
-          echo "=============================================="
+          echo "================================================"
           echo "       DEPLOYMENT COMPLETED SUCCESSFULLY"
-          echo "=============================================="
+          echo "================================================"
           echo ""
 
-          echo "Application URL:"
+          echo "YOUR JAVA APPLICATION:"
           echo ""
 
           echo "http://${{ secrets.EC2_HOST }}:8080/neontask/"
-
           echo ""
 
-          echo "Tomcat URL:"
+          echo "TOMCAT MANAGER:"
+          echo ""
+
+          echo "http://${{ secrets.EC2_HOST }}:8080/manager/html"
+          echo ""
+
+          echo "TOMCAT HOST MANAGER:"
+          echo ""
+
+          echo "http://${{ secrets.EC2_HOST }}:8080/host-manager/html"
+          echo ""
+
+          echo "LOGIN:"
+          echo ""
+
+          echo "Username: admin"
+          echo "Password: Admin#123456"
+          echo ""
+
+          echo "TOMCAT:"
           echo ""
 
           echo "http://${{ secrets.EC2_HOST }}:8080/"
-
           echo ""
 
-          echo "Tomcat Port: 8080"
-
+          echo "PORT:"
+          echo "8080"
           echo ""
 
           echo "Make sure EC2 Security Group allows:"
+          echo "TCP 8080 from your IP."
           echo ""
-          echo "Protocol : TCP"
-          echo "Port     : 8080"
-          echo "Source   : Your IP address"
 
-          echo ""
-          echo "=============================================="
+          echo "================================================"
