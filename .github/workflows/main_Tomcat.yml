@@ -473,7 +473,7 @@ jobs:
           echo "VERIFY TOMCAT MANAGER"
           echo "======================================"
 
-          if [ -d /opt/tomcat/webapps/manager ]; then
+          if sudo test -d /opt/tomcat/webapps/manager; then
 
               echo "Tomcat Manager exists."
 
@@ -497,7 +497,7 @@ jobs:
           echo "VERIFY TOMCAT HOST MANAGER"
           echo "======================================"
 
-          if [ -d /opt/tomcat/webapps/host-manager ]; then
+          if sudo test -d /opt/tomcat/webapps/host-manager; then
 
               echo "Tomcat Host Manager exists."
 
