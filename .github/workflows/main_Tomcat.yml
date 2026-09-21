@@ -7,6 +7,7 @@ on:
 
   workflow_dispatch:
 
+
 jobs:
 
   # ==========================================================
@@ -20,7 +21,7 @@ jobs:
     steps:
 
       # --------------------------------------------------------
-      # Checkout source code
+      # CHECKOUT
       # --------------------------------------------------------
 
       - name: Checkout Code
@@ -28,7 +29,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # Setup Java 17
+      # JAVA 17
       # --------------------------------------------------------
 
       - name: Setup Java 17
@@ -40,7 +41,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # Build WAR
+      # BUILD WAR
       # --------------------------------------------------------
 
       - name: Build WAR
@@ -77,7 +78,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # Upload WAR
+      # UPLOAD WAR ARTIFACT
       # --------------------------------------------------------
 
       - name: Upload WAR Artifact
@@ -99,7 +100,7 @@ jobs:
     steps:
 
       # --------------------------------------------------------
-      # Download WAR
+      # DOWNLOAD WAR
       # --------------------------------------------------------
 
       - name: Download WAR
@@ -110,7 +111,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # Verify WAR
+      # VERIFY WAR
       # --------------------------------------------------------
 
       - name: Verify WAR
@@ -139,7 +140,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # Configure SSH
+      # SSH CONFIGURATION
       # --------------------------------------------------------
 
       - name: Configure SSH
@@ -209,7 +210,20 @@ jobs:
 
 
           # ==================================================
-          # TOMCAT INSTALLATION
+          # TOMCAT VARIABLES
+          # ==================================================
+
+          TOMCAT_VERSION="10.1.60"
+
+          TOMCAT_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz"
+
+          TOMCAT_ARCHIVE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+
+          TOMCAT_EXTRACT="/tmp/apache-tomcat-${TOMCAT_VERSION}"
+
+
+          # ==================================================
+          # CHECK TOMCAT INSTALLATION
           # ==================================================
 
           echo "======================================"
@@ -219,89 +233,208 @@ jobs:
           if [ -f /opt/tomcat/bin/catalina.sh ]; then
 
               echo "Tomcat already installed."
-              echo "Using existing Tomcat installation."
 
           else
 
               echo "Tomcat not found."
-              echo "Installing Tomcat 10.1.60."
+              echo "Installing Tomcat ${TOMCAT_VERSION}."
 
 
               cd /tmp
 
 
-              sudo rm -f apache-tomcat.tar.gz
+              sudo rm -f "$TOMCAT_ARCHIVE"
+
+              sudo rm -rf "$TOMCAT_EXTRACT"
 
 
               curl -fL \
                 --retry 3 \
                 --connect-timeout 20 \
-                -o apache-tomcat.tar.gz \
-                https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
+                -o "$TOMCAT_ARCHIVE" \
+                "$TOMCAT_URL"
 
 
               echo "Tomcat download completed."
 
 
-              sudo rm -rf /opt/apache-tomcat-10.1.60
+              echo "======================================"
+              echo "VERIFY TOMCAT ARCHIVE"
+              echo "======================================"
+
+
+              sudo tar -tzf "$TOMCAT_ARCHIVE" \
+                | grep -E \
+                'apache-tomcat-10.1.60/webapps/(manager|host-manager)/' \
+                | head -20 || true
+
+
+              echo "Extracting Tomcat."
 
 
               sudo tar \
-                -xzf apache-tomcat.tar.gz \
-                -C /opt
+                -xzf "$TOMCAT_ARCHIVE" \
+                -C /tmp
+
 
               sudo rm -rf /opt/tomcat
 
+
               sudo mv \
-                /opt/apache-tomcat-10.1.60 \
+                "$TOMCAT_EXTRACT" \
                 /opt/tomcat
-
-              echo "======================================"
-              echo "VERIFY TOMCAT WEB APPLICATIONS"
-              echo "======================================"
-
-              sudo ls -lah /opt/tomcat/webapps/
-
-              echo "======================================"
-              echo "CHECK MANAGER APPLICATION"
-              echo "======================================"
-
-              if [ -d /opt/tomcat/webapps/manager ]; then
-                  echo "Tomcat Manager exists."
-              else
-                  echo "Tomcat Manager not found."
-                  echo "Downloading Manager webapp..."
-
-                  cd /tmp
-
-                  curl -fL \
-                    --retry 3 \
-                    --connect-timeout 20 \
-                    -o tomcat-webapps.tar.gz \
-                    https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
-
-                  sudo tar \
-                    -xzf tomcat-webapps.tar.gz \
-                    -C /tmp
-
-                  sudo cp -r \
-                    /tmp/apache-tomcat-10.1.60/webapps/manager \
-                    /opt/tomcat/webapps/
-
-                  sudo cp -r \
-                    /tmp/apache-tomcat-10.1.60/webapps/host-manager \
-                    /opt/tomcat/webapps/
-
-                  sudo rm -rf /tmp/apache-tomcat-10.1.60
-
-                  echo "Manager and Host Manager copied."
-              fi
 
           fi
 
 
           # ==================================================
-          # VERIFY TOMCAT
+          # INSTALL MANAGER + HOST MANAGER
+          # ==================================================
+
+          echo "======================================"
+          echo "INSTALL TOMCAT MANAGER APPLICATIONS"
+          echo "======================================"
+
+
+          MANAGER_DIR="/opt/tomcat/webapps/manager"
+
+          HOST_MANAGER_DIR="/opt/tomcat/webapps/host-manager"
+
+
+          # --------------------------------------------------
+          # CHECK EXISTING MANAGER
+          # --------------------------------------------------
+
+          if [ -d "$MANAGER_DIR" ]; then
+
+              echo "Tomcat Manager already exists."
+
+          else
+
+              echo "Tomcat Manager is missing."
+
+              echo "Downloading Tomcat archive for Manager."
+
+
+              cd /tmp
+
+
+              sudo rm -f "$TOMCAT_ARCHIVE"
+
+
+              curl -fL \
+                --retry 3 \
+                --connect-timeout 20 \
+                -o "$TOMCAT_ARCHIVE" \
+                "$TOMCAT_URL"
+
+
+              echo "Checking archive for Manager."
+
+
+              if sudo tar -tzf "$TOMCAT_ARCHIVE" \
+                | grep -q \
+                "apache-tomcat-${TOMCAT_VERSION}/webapps/manager/"; then
+
+                  echo "Manager found inside Tomcat archive."
+
+              else
+
+                  echo "ERROR: Manager application is not present in archive."
+
+                  sudo tar -tzf "$TOMCAT_ARCHIVE" \
+                    | grep webapps \
+                    | head -100 || true
+
+                  exit 1
+
+              fi
+
+
+              sudo rm -rf /tmp/tomcat-manager-extract
+
+
+              sudo mkdir -p /tmp/tomcat-manager-extract
+
+
+              sudo tar \
+                -xzf "$TOMCAT_ARCHIVE" \
+                -C /tmp/tomcat-manager-extract
+
+
+              sudo mkdir -p /opt/tomcat/webapps
+
+
+              sudo cp -r \
+                "/tmp/tomcat-manager-extract/apache-tomcat-${TOMCAT_VERSION}/webapps/manager" \
+                /opt/tomcat/webapps/
+
+
+              echo "Tomcat Manager copied."
+
+          fi
+
+
+          # --------------------------------------------------
+          # CHECK EXISTING HOST MANAGER
+          # --------------------------------------------------
+
+          if [ -d "$HOST_MANAGER_DIR" ]; then
+
+              echo "Tomcat Host Manager already exists."
+
+          else
+
+              echo "Tomcat Host Manager is missing."
+
+              echo "Checking archive for Host Manager."
+
+
+              if sudo tar -tzf "$TOMCAT_ARCHIVE" \
+                | grep -q \
+                "apache-tomcat-${TOMCAT_VERSION}/webapps/host-manager/"; then
+
+                  echo "Host Manager found inside Tomcat archive."
+
+              else
+
+                  echo "ERROR: Host Manager application is not present in archive."
+
+                  sudo tar -tzf "$TOMCAT_ARCHIVE" \
+                    | grep webapps \
+                    | head -100 || true
+
+                  exit 1
+
+              fi
+
+
+              sudo mkdir -p /tmp/tomcat-host-manager-extract
+
+
+              sudo rm -rf /tmp/tomcat-host-manager-extract
+
+
+              sudo mkdir -p /tmp/tomcat-host-manager-extract
+
+
+              sudo tar \
+                -xzf "$TOMCAT_ARCHIVE" \
+                -C /tmp/tomcat-host-manager-extract
+
+
+              sudo cp -r \
+                "/tmp/tomcat-host-manager-extract/apache-tomcat-${TOMCAT_VERSION}/webapps/host-manager" \
+                /opt/tomcat/webapps/
+
+
+              echo "Tomcat Host Manager copied."
+
+          fi
+
+
+          # ==================================================
+          # VERIFY TOMCAT FILES
           # ==================================================
 
           echo "======================================"
@@ -309,11 +442,75 @@ jobs:
           echo "======================================"
 
           sudo test -f /opt/tomcat/bin/catalina.sh
+
           sudo test -f /opt/tomcat/bin/startup.sh
+
           sudo test -f /opt/tomcat/bin/shutdown.sh
 
 
           echo "Tomcat scripts found."
+
+
+          # ==================================================
+          # SHOW WEBAPPS
+          # ==================================================
+
+          echo "======================================"
+          echo "TOMCAT WEBAPPS"
+          echo "======================================"
+
+          sudo find /opt/tomcat/webapps \
+            -maxdepth 1 \
+            -type d \
+            -print
+
+
+          # ==================================================
+          # VERIFY MANAGER
+          # ==================================================
+
+          echo "======================================"
+          echo "VERIFY TOMCAT MANAGER"
+          echo "======================================"
+
+          if [ -d /opt/tomcat/webapps/manager ]; then
+
+              echo "Tomcat Manager exists."
+
+          else
+
+              echo "ERROR: Tomcat Manager application not found."
+
+              echo "Expected:"
+              echo "/opt/tomcat/webapps/manager"
+
+              exit 1
+
+          fi
+
+
+          # ==================================================
+          # VERIFY HOST MANAGER
+          # ==================================================
+
+          echo "======================================"
+          echo "VERIFY TOMCAT HOST MANAGER"
+          echo "======================================"
+
+          if [ -d /opt/tomcat/webapps/host-manager ]; then
+
+              echo "Tomcat Host Manager exists."
+
+          else
+
+              echo "ERROR: Tomcat Host Manager application not found."
+
+              echo "Expected:"
+              echo "/opt/tomcat/webapps/host-manager"
+
+              exit 1
+
+          fi
 
 
           # ==================================================
@@ -327,7 +524,6 @@ jobs:
           sudo chown -R tomcat:tomcat /opt/tomcat
 
 
-          # Use find instead of *.sh
           sudo find /opt/tomcat/bin \
             -type f \
             -name "*.sh" \
@@ -335,8 +531,11 @@ jobs:
 
 
           sudo mkdir -p /opt/tomcat/temp
+
           sudo mkdir -p /opt/tomcat/logs
+
           sudo mkdir -p /opt/tomcat/work
+
           sudo mkdir -p /opt/tomcat/webapps
 
 
@@ -369,6 +568,7 @@ jobs:
 
           sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null << 'XML'
           <?xml version="1.0" encoding="UTF-8"?>
+
           <tomcat-users
               xmlns="http://tomcat.apache.org/xml"
               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -386,40 +586,14 @@ jobs:
           </tomcat-users>
           XML
 
-          sudo chown tomcat:tomcat /opt/tomcat/conf/tomcat-users.xml
-          sudo chmod 640 /opt/tomcat/conf/tomcat-users.xml
 
-          # ==================================================
-          # CHECK MANAGER APPLICATION
-          # ==================================================
+          sudo chown tomcat:tomcat \
+            /opt/tomcat/conf/tomcat-users.xml
 
-          echo "======================================"
-          echo "CHECK TOMCAT MANAGER"
-          echo "======================================"
 
-          if [ -d /opt/tomcat/webapps/manager ]; then
-              echo "Tomcat Manager exists."
-          else
-              echo "ERROR: Tomcat Manager application not found."
-              echo "Expected: /opt/tomcat/webapps/manager"
-              exit 1
-          fi
+          sudo chmod 640 \
+            /opt/tomcat/conf/tomcat-users.xml
 
-          # ==================================================
-          # CHECK HOST MANAGER APPLICATION
-          # ==================================================
-
-          echo "======================================"
-          echo "CHECK TOMCAT HOST MANAGER"
-          echo "======================================"
-
-          if [ -d /opt/tomcat/webapps/host-manager ]; then
-              echo "Tomcat Host Manager exists."
-          else
-              echo "ERROR: Tomcat Host Manager application not found."
-              echo "Expected: /opt/tomcat/webapps/host-manager"
-              exit 1
-          fi
 
           # ==================================================
           # MANAGER REMOTE ACCESS
@@ -431,37 +605,43 @@ jobs:
 
           MANAGER_CONTEXT="/opt/tomcat/webapps/manager/META-INF/context.xml"
 
+
           if [ -f "$MANAGER_CONTEXT" ]; then
 
               echo "Manager context.xml found."
 
-              sudo cp "$MANAGER_CONTEXT" "${MANAGER_CONTEXT}.backup"
+              sudo cp \
+                "$MANAGER_CONTEXT" \
+                "${MANAGER_CONTEXT}.backup"
+
 
               sudo sed -i \
                 '/RemoteAddrValve/d' \
                 "$MANAGER_CONTEXT"
 
+
               sudo sed -i \
                 '/RemoteCIDRValve/d' \
                 "$MANAGER_CONTEXT"
 
-              echo "Manager remote access restriction removed."
 
           else
 
-              echo "Manager context.xml does not exist."
-              echo "Creating Manager context.xml."
+              echo "Manager context.xml missing."
 
               sudo mkdir -p \
                 /opt/tomcat/webapps/manager/META-INF
 
+
               sudo tee "$MANAGER_CONTEXT" > /dev/null << 'XML'
           <?xml version="1.0" encoding="UTF-8"?>
+
           <Context>
           </Context>
           XML
 
           fi
+
 
           # ==================================================
           # HOST MANAGER REMOTE ACCESS
@@ -473,37 +653,43 @@ jobs:
 
           HOST_MANAGER_CONTEXT="/opt/tomcat/webapps/host-manager/META-INF/context.xml"
 
+
           if [ -f "$HOST_MANAGER_CONTEXT" ]; then
 
               echo "Host Manager context.xml found."
 
-              sudo cp "$HOST_MANAGER_CONTEXT" "${HOST_MANAGER_CONTEXT}.backup"
+              sudo cp \
+                "$HOST_MANAGER_CONTEXT" \
+                "${HOST_MANAGER_CONTEXT}.backup"
+
 
               sudo sed -i \
                 '/RemoteAddrValve/d' \
                 "$HOST_MANAGER_CONTEXT"
 
+
               sudo sed -i \
                 '/RemoteCIDRValve/d' \
                 "$HOST_MANAGER_CONTEXT"
 
-              echo "Host Manager remote access restriction removed."
 
           else
 
-              echo "Host Manager context.xml does not exist."
-              echo "Creating Host Manager context.xml."
+              echo "Host Manager context.xml missing."
 
               sudo mkdir -p \
                 /opt/tomcat/webapps/host-manager/META-INF
 
+
               sudo tee "$HOST_MANAGER_CONTEXT" > /dev/null << 'XML'
           <?xml version="1.0" encoding="UTF-8"?>
+
           <Context>
           </Context>
           XML
 
           fi
+
 
           # ==================================================
           # FIX OWNERSHIP
@@ -513,11 +699,14 @@ jobs:
           echo "FIX TOMCAT OWNERSHIP"
           echo "======================================"
 
-          sudo chown -R tomcat:tomcat /opt/tomcat/conf
-          sudo chown -R tomcat:tomcat /opt/tomcat/webapps
+          sudo chown -R \
+            tomcat:tomcat \
+            /opt/tomcat/conf \
+            /opt/tomcat/webapps
+
 
           # ==================================================
-          # VERIFY TOMCAT USER CONFIG
+          # VERIFY USER CONFIG
           # ==================================================
 
           echo "======================================"
@@ -526,7 +715,9 @@ jobs:
 
           sudo grep -E \
             'manager-gui|admin-gui|username="admin"' \
-            /opt/tomcat/conf/tomcat-users.xml || true
+            /opt/tomcat/conf/tomcat-users.xml \
+            || true
+
 
           # ==================================================
           # VERIFY MANAGER CONTEXT
@@ -539,6 +730,7 @@ jobs:
           sudo cat \
             /opt/tomcat/webapps/manager/META-INF/context.xml
 
+
           # ==================================================
           # VERIFY HOST MANAGER CONTEXT
           # ==================================================
@@ -549,26 +741,6 @@ jobs:
 
           sudo cat \
             /opt/tomcat/webapps/host-manager/META-INF/context.xml
-          # ==================================================
-          # SHOW MANAGER CONFIG
-          # ==================================================
-
-          echo "======================================"
-          echo "MANAGER CONTEXT"
-          echo "======================================"
-
-          sudo cat \
-            /opt/tomcat/webapps/manager/META-INF/context.xml \
-            || true
-
-
-          echo "======================================"
-          echo "HOST MANAGER CONTEXT"
-          echo "======================================"
-
-          sudo cat \
-            /opt/tomcat/webapps/host-manager/META-INF/context.xml \
-            || true
 
 
           # ==================================================
@@ -654,7 +826,7 @@ jobs:
 
 
           # ==================================================
-          # CHECK TOMCAT
+          # CHECK SERVICE
           # ==================================================
 
           echo "======================================"
@@ -698,7 +870,7 @@ jobs:
 
 
           # ==================================================
-          # CHECK PORT
+          # CHECK PORT 8080
           # ==================================================
 
           echo "======================================"
@@ -709,6 +881,7 @@ jobs:
 
 
           echo "Tomcat preparation completed."
+
 
           EOF
 
@@ -739,8 +912,14 @@ jobs:
 
       - name: Deploy WAR to Tomcat
         run: |
+
           ssh -i ~/.ssh/ec2_key \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'EOF'
+
+
+          # ==================================================
+          # STOP TOMCAT
+          # ==================================================
 
           echo "======================================"
           echo "STOP TOMCAT"
@@ -748,42 +927,87 @@ jobs:
 
           sudo systemctl stop tomcat || true
 
+
+          # ==================================================
+          # REMOVE OLD APPLICATION
+          # ==================================================
+
           echo "======================================"
           echo "REMOVE OLD APPLICATION"
           echo "======================================"
 
-          sudo rm -rf /opt/tomcat/webapps/neontask
-          sudo rm -f /opt/tomcat/webapps/neontask.war
+          sudo rm -rf \
+            /opt/tomcat/webapps/neontask
+
+          sudo rm -f \
+            /opt/tomcat/webapps/neontask.war
+
+
+          # ==================================================
+          # CHECK SOURCE WAR
+          # ==================================================
 
           echo "======================================"
           echo "CHECK SOURCE WAR"
           echo "======================================"
 
           if [ ! -f /tmp/neontask.war ]; then
+
               echo "ERROR: /tmp/neontask.war not found."
+
               exit 1
+
           fi
 
+
           ls -lh /tmp/neontask.war
+
+
+          # ==================================================
+          # COPY WAR
+          # ==================================================
 
           echo "======================================"
           echo "COPY NEW WAR"
           echo "======================================"
 
-          sudo cp /tmp/neontask.war /opt/tomcat/webapps/neontask.war
+          sudo cp \
+            /tmp/neontask.war \
+            /opt/tomcat/webapps/neontask.war
+
+
+          # ==================================================
+          # VERIFY WAR
+          # ==================================================
 
           echo "======================================"
           echo "VERIFY WAR COPY"
           echo "======================================"
 
-          ls -lh /opt/tomcat/webapps/neontask.war
+          ls -lh \
+            /opt/tomcat/webapps/neontask.war
+
+
+          # ==================================================
+          # WAR PERMISSIONS
+          # ==================================================
 
           echo "======================================"
           echo "SET WAR PERMISSIONS"
           echo "======================================"
 
-          sudo chown tomcat:tomcat /opt/tomcat/webapps/neontask.war
-          sudo chmod 644 /opt/tomcat/webapps/neontask.war
+          sudo chown \
+            tomcat:tomcat \
+            /opt/tomcat/webapps/neontask.war
+
+
+          sudo chmod 644 \
+            /opt/tomcat/webapps/neontask.war
+
+
+          # ==================================================
+          # START TOMCAT
+          # ==================================================
 
           echo "======================================"
           echo "START TOMCAT"
@@ -791,33 +1015,68 @@ jobs:
 
           sudo systemctl start tomcat
 
+
           echo "Waiting for Tomcat..."
+
           sleep 10
+
+
+          # ==================================================
+          # CHECK SERVICE
+          # ==================================================
 
           echo "======================================"
           echo "CHECK TOMCAT SERVICE"
           echo "======================================"
 
           if sudo systemctl is-active --quiet tomcat; then
+
               echo "Tomcat service is running."
+
           else
+
               echo "Tomcat service failed."
-              sudo systemctl status tomcat --no-pager || true
-              sudo journalctl -u tomcat -n 100 --no-pager || true
-              sudo tail -150 /opt/tomcat/logs/catalina.out || true
+
+              sudo systemctl status tomcat \
+                --no-pager || true
+
+              sudo journalctl \
+                -u tomcat \
+                -n 100 \
+                --no-pager || true
+
+              sudo tail -150 \
+                /opt/tomcat/logs/catalina.out || true
+
               exit 1
+
           fi
+
+
+          # ==================================================
+          # CHECK PORT
+          # ==================================================
 
           echo "======================================"
           echo "CHECK PORT 8080"
           echo "======================================"
 
           if sudo ss -lntp | grep -q 8080; then
+
               echo "Port 8080 is listening."
+
           else
+
               echo "Port 8080 is NOT listening."
+
               exit 1
+
           fi
+
+
+          # ==================================================
+          # WAIT FOR DEPLOYMENT
+          # ==================================================
 
           echo "======================================"
           echo "WAIT FOR APPLICATION DEPLOYMENT"
@@ -825,33 +1084,65 @@ jobs:
 
           sleep 15
 
+
+          # ==================================================
+          # WEBAPPS
+          # ==================================================
+
           echo "======================================"
           echo "CHECK WEBAPPS DIRECTORY"
           echo "======================================"
 
-          sudo ls -lah /opt/tomcat/webapps/
+          sudo ls -lah \
+            /opt/tomcat/webapps/
+
+
+          # ==================================================
+          # CHECK NEONTASK DIRECTORY
+          # ==================================================
 
           echo "======================================"
           echo "CHECK NEONTASK DIRECTORY"
           echo "======================================"
 
           if [ -d /opt/tomcat/webapps/neontask ]; then
+
               echo "neontask application directory exists."
+
           else
+
               echo "WARNING: neontask directory does not exist yet."
+
           fi
+
+
+          # ==================================================
+          # CHECK WAR
+          # ==================================================
 
           echo "======================================"
           echo "CHECK NEONTASK WAR"
           echo "======================================"
 
           if [ -f /opt/tomcat/webapps/neontask.war ]; then
+
               echo "neontask.war exists."
-              ls -lh /opt/tomcat/webapps/neontask.war
+
+              ls -lh \
+                /opt/tomcat/webapps/neontask.war
+
           else
+
               echo "WARNING: neontask.war is not present."
-              echo "This is not treated as an immediate failure."
+
+              echo "Tomcat may have already deployed/unpacked it."
+
           fi
+
+
+          # ==================================================
+          # TOMCAT LOGS
+          # ==================================================
 
           echo "======================================"
           echo "CHECK TOMCAT DEPLOYMENT LOG"
@@ -859,64 +1150,152 @@ jobs:
 
           sudo grep -i -E \
             "neontask|Deploying web application|Deployment of web application|SEVERE|ERROR" \
-            /opt/tomcat/logs/catalina.out | tail -100 || true
+            /opt/tomcat/logs/catalina.out \
+            | tail -100 || true
+
+
+          # ==================================================
+          # TEST TOMCAT ROOT
+          # ==================================================
 
           echo "======================================"
           echo "TEST TOMCAT ROOT"
           echo "======================================"
 
-          ROOT_CODE=$(curl -s --max-time 10 \
+          ROOT_CODE=$(curl -s \
+            --max-time 10 \
             -o /tmp/tomcat-root.html \
             -w "%{http_code}" \
             http://localhost:8080/ || true)
 
+
           echo "Tomcat root HTTP status: $ROOT_CODE"
+
+
+          # ==================================================
+          # TEST NEONTASK
+          # ==================================================
 
           echo "======================================"
           echo "TEST NEONTASK APPLICATION"
           echo "======================================"
 
-          APP_CODE=$(curl -s --max-time 20 \
+          APP_CODE=$(curl -s \
+            --max-time 20 \
             -o /tmp/neontask-response.html \
             -w "%{http_code}" \
             http://localhost:8080/neontask/ || true)
 
+
           echo "Neontask HTTP status: $APP_CODE"
+
+
+          # ==================================================
+          # APPLICATION RESPONSE
+          # ==================================================
 
           echo "======================================"
           echo "APPLICATION RESPONSE"
           echo "======================================"
 
-          cat /tmp/neontask-response.html | head -100 || true
+          cat \
+            /tmp/neontask-response.html \
+            | head -100 || true
+
+
+          # ==================================================
+          # MANAGER CHECK
+          # ==================================================
+
+          echo "======================================"
+          echo "TEST TOMCAT MANAGER"
+          echo "======================================"
+
+          MANAGER_CODE=$(curl -s \
+            --max-time 10 \
+            -o /tmp/manager-response.html \
+            -w "%{http_code}" \
+            http://localhost:8080/manager/html || true)
+
+
+          echo "Manager HTTP status: $MANAGER_CODE"
+
+
+          # ==================================================
+          # HOST MANAGER CHECK
+          # ==================================================
+
+          echo "======================================"
+          echo "TEST TOMCAT HOST MANAGER"
+          echo "======================================"
+
+          HOST_MANAGER_CODE=$(curl -s \
+            --max-time 10 \
+            -o /tmp/host-manager-response.html \
+            -w "%{http_code}" \
+            http://localhost:8080/host-manager/html || true)
+
+
+          echo "Host Manager HTTP status: $HOST_MANAGER_CODE"
+
+
+          # ==================================================
+          # FINAL APPLICATION CHECK
+          # ==================================================
 
           echo "======================================"
           echo "FINAL DEPLOYMENT CHECK"
           echo "======================================"
 
-          if [ "$APP_CODE" = "200" ] || [ "$APP_CODE" = "302" ] || [ "$APP_CODE" = "301" ]; then
+
+          if [ "$APP_CODE" = "200" ] \
+            || [ "$APP_CODE" = "302" ] \
+            || [ "$APP_CODE" = "301" ]; then
+
+              echo ""
               echo "======================================"
               echo "APPLICATION DEPLOYMENT SUCCESSFUL"
               echo "======================================"
+
               echo "HTTP Status: $APP_CODE"
+
               echo "Application: /neontask"
+
           else
+
+              echo ""
               echo "======================================"
               echo "APPLICATION DEPLOYMENT FAILED"
               echo "======================================"
+
               echo "HTTP Status: $APP_CODE"
+
 
               echo ""
               echo "Last Tomcat logs:"
-              sudo tail -200 /opt/tomcat/logs/catalina.out || true
+
+
+              sudo tail -200 \
+                /opt/tomcat/logs/catalina.out \
+                || true
+
 
               exit 1
+
           fi
 
+
+          # ==================================================
+          # DEPLOYMENT COMPLETED
+          # ==================================================
+
+          echo ""
           echo "======================================"
           echo "DEPLOYMENT COMPLETED"
           echo "======================================"
 
           EOF
+
 
       # ========================================================
       # FINAL MESSAGE
@@ -931,11 +1310,13 @@ jobs:
           echo "================================================"
           echo ""
 
+
           echo "YOUR JAVA APPLICATION:"
           echo ""
 
           echo "http://${{ secrets.EC2_HOST }}:8080/neontask/"
           echo ""
+
 
           echo "TOMCAT MANAGER:"
           echo ""
@@ -943,11 +1324,13 @@ jobs:
           echo "http://${{ secrets.EC2_HOST }}:8080/manager/html"
           echo ""
 
+
           echo "TOMCAT HOST MANAGER:"
           echo ""
 
           echo "http://${{ secrets.EC2_HOST }}:8080/host-manager/html"
           echo ""
+
 
           echo "LOGIN:"
           echo ""
@@ -956,18 +1339,22 @@ jobs:
           echo "Password: Admin#123456"
           echo ""
 
+
           echo "TOMCAT:"
           echo ""
 
           echo "http://${{ secrets.EC2_HOST }}:8080/"
           echo ""
 
+
           echo "PORT:"
           echo "8080"
           echo ""
 
+
           echo "Make sure EC2 Security Group allows:"
           echo "TCP 8080 from your IP."
           echo ""
+
 
           echo "================================================"
