@@ -605,12 +605,8 @@ jobs:
 
       - name: Deploy WAR to Tomcat
         run: |
-
           ssh -i ~/.ssh/ec2_key \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'EOF'
-
-          # Do not use set -e here.
-          # We want diagnostic commands to continue.
 
           echo "======================================"
           echo "STOP TOMCAT"
@@ -618,57 +614,42 @@ jobs:
 
           sudo systemctl stop tomcat || true
 
-
-          # ==================================================
-          # REMOVE OLD APPLICATION
-          # ==================================================
-
           echo "======================================"
           echo "REMOVE OLD APPLICATION"
           echo "======================================"
 
-          sudo rm -rf \
-            /opt/tomcat/webapps/neontask
+          sudo rm -rf /opt/tomcat/webapps/neontask
+          sudo rm -f /opt/tomcat/webapps/neontask.war
 
+          echo "======================================"
+          echo "CHECK SOURCE WAR"
+          echo "======================================"
 
-          sudo rm -f \
-            /opt/tomcat/webapps/neontask.war
+          if [ ! -f /tmp/neontask.war ]; then
+              echo "ERROR: /tmp/neontask.war not found."
+              exit 1
+          fi
 
-
-          # ==================================================
-          # COPY NEW WAR
-          # ==================================================
+          ls -lh /tmp/neontask.war
 
           echo "======================================"
           echo "COPY NEW WAR"
           echo "======================================"
 
-          sudo cp \
-            /tmp/neontask.war \
-            /opt/tomcat/webapps/neontask.war
+          sudo cp /tmp/neontask.war /opt/tomcat/webapps/neontask.war
 
+          echo "======================================"
+          echo "VERIFY WAR COPY"
+          echo "======================================"
 
-          # ==================================================
-          # WAR PERMISSIONS
-          # ==================================================
+          ls -lh /opt/tomcat/webapps/neontask.war
 
           echo "======================================"
           echo "SET WAR PERMISSIONS"
           echo "======================================"
 
-          sudo chown \
-            tomcat:tomcat \
-            /opt/tomcat/webapps/neontask.war
-
-
-          sudo chmod \
-            644 \
-            /opt/tomcat/webapps/neontask.war
-
-
-          # ==================================================
-          # START TOMCAT
-          # ==================================================
+          sudo chown tomcat:tomcat /opt/tomcat/webapps/neontask.war
+          sudo chmod 644 /opt/tomcat/webapps/neontask.war
 
           echo "======================================"
           echo "START TOMCAT"
@@ -676,198 +657,132 @@ jobs:
 
           sudo systemctl start tomcat
 
-
           echo "Waiting for Tomcat..."
-
           sleep 10
-
-
-          # ==================================================
-          # CHECK TOMCAT
-          # ==================================================
 
           echo "======================================"
           echo "CHECK TOMCAT SERVICE"
           echo "======================================"
 
           if sudo systemctl is-active --quiet tomcat; then
-
               echo "Tomcat service is running."
-
           else
-
               echo "Tomcat service failed."
-
-              sudo systemctl status tomcat \
-                --no-pager || true
-
-              sudo journalctl \
-                -u tomcat \
-                -n 100 \
-                --no-pager || true
-
-              sudo tail -150 \
-                /opt/tomcat/logs/catalina.out || true
-
+              sudo systemctl status tomcat --no-pager || true
+              sudo journalctl -u tomcat -n 100 --no-pager || true
+              sudo tail -150 /opt/tomcat/logs/catalina.out || true
               exit 1
-
           fi
-
-
-          # ==================================================
-          # CHECK PORT
-          # ==================================================
 
           echo "======================================"
           echo "CHECK PORT 8080"
           echo "======================================"
 
           if sudo ss -lntp | grep -q 8080; then
-
               echo "Port 8080 is listening."
-
           else
-
               echo "Port 8080 is NOT listening."
-
               exit 1
-
           fi
 
-
-          # ==================================================
-          # WAIT FOR WAR DEPLOYMENT
-          # ==================================================
-
           echo "======================================"
-          echo "WAIT FOR WAR DEPLOYMENT"
+          echo "WAIT FOR APPLICATION DEPLOYMENT"
           echo "======================================"
 
-          sleep 10
-
-
-          # ==================================================
-          # CHECK WAR
-          # ==================================================
+          sleep 15
 
           echo "======================================"
-          echo "CHECK WAR FILE"
+          echo "CHECK WEBAPPS DIRECTORY"
+          echo "======================================"
+
+          sudo ls -lah /opt/tomcat/webapps/
+
+          echo "======================================"
+          echo "CHECK NEONTASK DIRECTORY"
+          echo "======================================"
+
+          if [ -d /opt/tomcat/webapps/neontask ]; then
+              echo "neontask application directory exists."
+          else
+              echo "WARNING: neontask directory does not exist yet."
+          fi
+
+          echo "======================================"
+          echo "CHECK NEONTASK WAR"
           echo "======================================"
 
           if [ -f /opt/tomcat/webapps/neontask.war ]; then
-
               echo "neontask.war exists."
-
+              ls -lh /opt/tomcat/webapps/neontask.war
           else
-
-              echo "ERROR: neontask.war not found."
-
-              exit 1
-
+              echo "WARNING: neontask.war is not present."
+              echo "This is not treated as an immediate failure."
           fi
 
-
-          # ==================================================
-          # CHECK TOMCAT DEPLOYMENT LOG
-          # ==================================================
-
           echo "======================================"
-          echo "CHECK TOMCAT DEPLOYMENT"
+          echo "CHECK TOMCAT DEPLOYMENT LOG"
           echo "======================================"
 
-          sudo grep \
-            -i \
-            "neontask" \
-            /opt/tomcat/logs/catalina.out \
-            | tail -30 || true
-
-
-          # ==================================================
-          # TEST TOMCAT ROOT
-          # ==================================================
+          sudo grep -i -E \
+            "neontask|Deploying web application|Deployment of web application|SEVERE|ERROR" \
+            /opt/tomcat/logs/catalina.out | tail -100 || true
 
           echo "======================================"
           echo "TEST TOMCAT ROOT"
           echo "======================================"
 
-          ROOT_CODE=$(curl \
-            -s \
-            --max-time 10 \
+          ROOT_CODE=$(curl -s --max-time 10 \
             -o /tmp/tomcat-root.html \
             -w "%{http_code}" \
             http://localhost:8080/ || true)
 
-
           echo "Tomcat root HTTP status: $ROOT_CODE"
 
-
-          # ==================================================
-          # TEST APPLICATION
-          # ==================================================
-
           echo "======================================"
-          echo "TEST NEONTASK"
+          echo "TEST NEONTASK APPLICATION"
           echo "======================================"
 
-          APP_CODE=$(curl \
-            -s \
-            --max-time 15 \
+          APP_CODE=$(curl -s --max-time 20 \
             -o /tmp/neontask-response.html \
             -w "%{http_code}" \
             http://localhost:8080/neontask/ || true)
 
-
           echo "Neontask HTTP status: $APP_CODE"
-
 
           echo "======================================"
           echo "APPLICATION RESPONSE"
           echo "======================================"
 
-          cat /tmp/neontask-response.html \
-            | head -100 || true
-
-
-          # ==================================================
-          # WEBAPPS
-          # ==================================================
+          cat /tmp/neontask-response.html | head -100 || true
 
           echo "======================================"
-          echo "TOMCAT WEBAPPS"
+          echo "FINAL DEPLOYMENT CHECK"
           echo "======================================"
 
-          sudo ls -lah \
-            /opt/tomcat/webapps/
+          if [ "$APP_CODE" = "200" ] || [ "$APP_CODE" = "302" ] || [ "$APP_CODE" = "301" ]; then
+              echo "======================================"
+              echo "APPLICATION DEPLOYMENT SUCCESSFUL"
+              echo "======================================"
+              echo "HTTP Status: $APP_CODE"
+              echo "Application: /neontask"
+          else
+              echo "======================================"
+              echo "APPLICATION DEPLOYMENT FAILED"
+              echo "======================================"
+              echo "HTTP Status: $APP_CODE"
 
+              echo ""
+              echo "Last Tomcat logs:"
+              sudo tail -200 /opt/tomcat/logs/catalina.out || true
 
-          # ==================================================
-          # CATALINA LOG
-          # ==================================================
-
-          echo "======================================"
-          echo "CATALINA LOG"
-          echo "======================================"
-
-          sudo tail -150 \
-            /opt/tomcat/logs/catalina.out || true
-
-
-          # ==================================================
-          # FINAL
-          # ==================================================
+              exit 1
+          fi
 
           echo "======================================"
           echo "DEPLOYMENT COMPLETED"
           echo "======================================"
 
-          echo ""
-          echo "Tomcat is running."
-          echo "WAR file is deployed."
-          echo "Application context: /neontask"
-          echo ""
-
           EOF
-
 
       # ========================================================
       # FINAL MESSAGE
