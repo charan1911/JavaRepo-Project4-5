@@ -8,16 +8,18 @@ on:
   workflow_dispatch:
 
 jobs:
+
   sonarqube:
+
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==========================================
+      # =====================================================
       # 1. Connect to EC2
-      # ==========================================
+      # =====================================================
 
-      - name: Install and Run SonarQube
+      - name: Connect to EC2 and Run SonarQube
         uses: appleboy/ssh-action@v1.2.2
 
         with:
@@ -31,31 +33,31 @@ jobs:
             set -e
 
             echo "=========================================="
-            echo "Starting SonarQube Setup"
+            echo "Starting SonarQube Quality Check"
             echo "=========================================="
 
 
-            # ==========================================
-            # 2. Update system
-            # ==========================================
+            # =====================================================
+            # 2. Update System
+            # =====================================================
 
             echo "Updating system..."
 
             sudo dnf update -y
 
 
-            # ==========================================
+            # =====================================================
             # 3. Install Git
-            # ==========================================
+            # =====================================================
 
             echo "Installing Git..."
 
             sudo dnf install git -y
 
 
-            # ==========================================
+            # =====================================================
             # 4. Install Java 17
-            # ==========================================
+            # =====================================================
 
             echo "Installing Java 17..."
 
@@ -66,91 +68,66 @@ jobs:
             java -version
 
 
-            # ==========================================
+            # =====================================================
             # 5. Install Docker
-            # ==========================================
+            # =====================================================
 
             echo "Installing Docker..."
 
             sudo dnf install docker -y
 
 
-            # ==========================================
+            # =====================================================
             # 6. Start Docker
-            # ==========================================
+            # =====================================================
 
             echo "Starting Docker..."
 
             sudo systemctl enable docker
-
             sudo systemctl start docker
 
 
-            echo "Docker status:"
-
-            sudo systemctl status docker --no-pager
-
-
-            # ==========================================
+            # =====================================================
             # 7. Install Maven
-            # ==========================================
+            # =====================================================
 
             echo "Installing Maven..."
 
             sudo dnf install maven -y
-
 
             echo "Maven version:"
 
             mvn -version
 
 
-            # ==========================================
+            # =====================================================
             # 8. Clone Java Project
-            # ==========================================
+            # =====================================================
 
             echo "=========================================="
             echo "Cloning Java Project"
             echo "=========================================="
 
-
             cd /home/ec2-user
 
-
             sudo rm -rf JavaRepo-Project4-5
-
 
             sudo git clone \
               https://github.com/charan1911/JavaRepo-Project4-5.git
 
-
             sudo chown -R ec2-user:ec2-user \
               /home/ec2-user/JavaRepo-Project4-5
-
 
             cd /home/ec2-user/JavaRepo-Project4-5
 
 
-            echo "Project files:"
+            # =====================================================
+            # 9. Check SonarQube Container
+            # =====================================================
 
-            ls -lah
-
-
-            # ==========================================
-            # 9. Check Docker
-            # ==========================================
-
-            echo "Docker version:"
-
-            sudo docker --version
-
-
-            # ==========================================
-            # 10. Check existing SonarQube container
-            # ==========================================
-
-            echo "Checking SonarQube container..."
-
+            echo "=========================================="
+            echo "Checking SonarQube"
+            echo "=========================================="
 
             if sudo docker ps -a \
               --format '{{.Names}}' \
@@ -174,33 +151,22 @@ jobs:
             fi
 
 
-            # ==========================================
-            # 11. Start SonarQube
-            # ==========================================
+            # =====================================================
+            # 10. Start SonarQube
+            # =====================================================
 
             echo "Starting SonarQube..."
 
             sudo docker start sonarqube 2>/dev/null || true
 
 
-            # ==========================================
-            # 12. Check container
-            # ==========================================
-
-            echo "SonarQube container status:"
-
-            sudo docker ps -a \
-              --filter name=sonarqube
-
-
-            # ==========================================
-            # 13. Wait for SonarQube
-            # ==========================================
+            # =====================================================
+            # 11. Wait for SonarQube
+            # =====================================================
 
             echo "=========================================="
             echo "Waiting for SonarQube"
             echo "=========================================="
-
 
             for i in {1..30}
             do
@@ -209,7 +175,6 @@ jobs:
                 http://localhost:9000/api/system/status \
                 | grep -o '"status":"[^"]*"' \
                 | head -1)
-
 
               echo "Attempt $i"
               echo "SonarQube status: $STATUS"
@@ -244,182 +209,52 @@ jobs:
             done
 
 
-            # ==========================================
-            # 14. Build Java Project
-            # ==========================================
+            # =====================================================
+            # 12. Build Java Project
+            # =====================================================
 
             echo "=========================================="
             echo "Building Java Project"
             echo "=========================================="
 
-
             cd /home/ec2-user/JavaRepo-Project4-5
-
 
             mvn clean verify -DskipTests
 
 
-            # ==========================================
-            # 15. Download Sonar Scanner
-            # ==========================================
-
-            echo "=========================================="
-            echo "Installing Sonar Scanner"
-            echo "=========================================="
-
-
-            cd /tmp
-
-
-            rm -rf sonar-scanner*
-            rm -f sonar-scanner.zip
-
-
-            echo "Downloading Sonar Scanner..."
-
-
-            curl -fL \
-              -o sonar-scanner.zip \
-              https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-7.2.0.4588-linux-x64.zip
-
-
-            echo "Checking downloaded file..."
-
-
-            ls -lh sonar-scanner.zip
-
-
-            # ==========================================
-            # 16. Extract Sonar Scanner
-            # ==========================================
-
-            echo "Extracting Sonar Scanner..."
-
-
-            unzip -q sonar-scanner.zip
-
-
-            echo "Checking extracted files..."
-
-
-            ls -lah
-
-
-            # ==========================================
-            # 17. Install Sonar Scanner
-            # ==========================================
-
-            echo "Installing Sonar Scanner..."
-
-
-            sudo rm -rf /opt/sonar-scanner
-
-
-            sudo mv \
-              sonar-scanner-7.2.0.4588-linux-x64 \
-              /opt/sonar-scanner
-
-
-            sudo chmod +x \
-              /opt/sonar-scanner/bin/sonar-scanner
-
-
-            # ==========================================
-            # 18. Verify Sonar Scanner
-            # ==========================================
-
-            echo "Checking Sonar Scanner installation..."
-
-
-            if [ ! -f /opt/sonar-scanner/bin/sonar-scanner ]
-            then
-
-              echo "Sonar Scanner installation failed."
-
-              exit 1
-
-            fi
-
-
-            export PATH=$PATH:/opt/sonar-scanner/bin
-
-
-            echo "Sonar Scanner version:"
-
-
-            sonar-scanner --version
-
-
-            # ==========================================
-            # 19. Configure Sonar Scanner
-            # ==========================================
-
-            echo "=========================================="
-            echo "Configuring Sonar Scanner"
-            echo "=========================================="
-
-
-            sudo tee \
-              /opt/sonar-scanner/conf/sonar-scanner.properties \
-              > /dev/null <<EOF
-
-            sonar.host.url=http://localhost:9000
-
-            EOF
-
-
-            # ==========================================
-            # 20. Run SonarQube Analysis
-            # ==========================================
+            # =====================================================
+            # 13. Run SonarQube Analysis
+            # =====================================================
 
             echo "=========================================="
             echo "Running SonarQube Analysis"
             echo "=========================================="
 
-
-            cd /home/ec2-user/JavaRepo-Project4-5
-
-
-            sonar-scanner \
+            mvn sonar:sonar \
               -Dsonar.projectKey=JavaRepo-Project4-5 \
               -Dsonar.projectName=JavaRepo-Project4-5 \
-              -Dsonar.sources=src \
-              -Dsonar.java.binaries=target/classes \
               -Dsonar.host.url=http://localhost:9000 \
               -Dsonar.token=${{ secrets.SONAR_TOKEN }}
 
 
-            # ==========================================
-            # 21. Final SonarQube status
-            # ==========================================
+            # =====================================================
+            # 14. Final Status
+            # =====================================================
 
             echo "=========================================="
             echo "SonarQube Analysis Completed"
             echo "=========================================="
 
-
             curl -s \
               http://localhost:9000/api/system/status
 
-
             echo ""
-
-
-            # ==========================================
-            # 22. SonarQube URL
-            # ==========================================
 
             echo "=========================================="
             echo "SonarQube URL"
             echo "=========================================="
 
-
             echo "http://${{ secrets.EC2_HOST }}:9000"
-
-
-            # ==========================================
-            # 23. Workflow Completed
-            # ==========================================
 
             echo "=========================================="
             echo "Workflow Completed Successfully"
