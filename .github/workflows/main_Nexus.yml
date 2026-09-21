@@ -1,4 +1,4 @@
-name: Build and Deploy Java WAR to Tomcat
+name: NEXUS
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
       - main
 
   workflow_dispatch:
+
+
+
 
 
 jobs:
