@@ -15,11 +15,7 @@ jobs:
 
     steps:
 
-      # =====================================================
-      # 1. Connect to EC2
-      # =====================================================
-
-      - name: Connect to EC2 and Run SonarQube
+      - name: Run SonarQube Analysis
         uses: appleboy/ssh-action@v1.2.2
 
         with:
@@ -33,146 +29,61 @@ jobs:
             set -e
 
             echo "=========================================="
-            echo "Starting SonarQube Quality Check"
+            echo "SonarQube Quality Check"
             echo "=========================================="
 
 
-            # =====================================================
-            # 2. Update System
-            # =====================================================
-
-            echo "Updating system..."
-
-            sudo dnf update -y
-
-
-            # =====================================================
-            # 3. Install Git
-            # =====================================================
-
-            echo "Installing Git..."
-
-            sudo dnf install git -y
-
-
-            # =====================================================
-            # 4. Install Java 17
-            # =====================================================
-
-            echo "Installing Java 17..."
-
-            sudo dnf install java-17-amazon-corretto-devel -y
+            # ------------------------------------------
+            # Check Java
+            # ------------------------------------------
 
             echo "Java version:"
-
             java -version
 
 
-            # =====================================================
-            # 5. Install Docker
-            # =====================================================
-
-            echo "Installing Docker..."
-
-            sudo dnf install docker -y
-
-
-
-
-
-
-
-
-            # =====================================================
-            # 6. Start Docker
-            # =====================================================
-
-            echo "Starting Docker..."
-
-            sudo systemctl enable docker
-            sudo systemctl start docker
-
-
-            # =====================================================
-            # 7. Install Maven
-            # =====================================================
-
-            echo "Installing Maven..."
-
-            sudo dnf install maven -y
+            # ------------------------------------------
+            # Check Maven
+            # ------------------------------------------
 
             echo "Maven version:"
-
             mvn -version
 
 
-            # =====================================================
-            # 8. Clone Java Project
-            # =====================================================
+            # ------------------------------------------
+            # Check Docker
+            # ------------------------------------------
 
-            echo "=========================================="
-            echo "Cloning Java Project"
-            echo "=========================================="
-
-            cd /home/ec2-user
-
-            sudo rm -rf JavaRepo-Project4-5
-
-            sudo git clone \
-              https://github.com/charan1911/JavaRepo-Project4-5.git
-
-            sudo chown -R ec2-user:ec2-user \
-              /home/ec2-user/JavaRepo-Project4-5
-
-            cd /home/ec2-user/JavaRepo-Project4-5
+            echo "Docker version:"
+            sudo docker --version
 
 
-            # =====================================================
-            # 9. Check SonarQube Container
-            # =====================================================
+            # ------------------------------------------
+            # Start SonarQube
+            # ------------------------------------------
 
-            echo "=========================================="
-            echo "Checking SonarQube"
-            echo "=========================================="
+            echo "Checking SonarQube..."
 
-            if sudo docker ps -a \
+            if ! sudo docker ps \
               --format '{{.Names}}' \
               | grep -q '^sonarqube$'
             then
 
-              echo "SonarQube container already exists."
+              echo "Starting SonarQube..."
+
+              sudo docker start sonarqube
 
             else
 
-              echo "Creating SonarQube container..."
-
-              sudo docker pull sonarqube:community
-
-              sudo docker run -d \
-                --name sonarqube \
-                --restart unless-stopped \
-                -p 9000:9000 \
-                sonarqube:community
+              echo "SonarQube is already running."
 
             fi
 
 
-            # =====================================================
-            # 10. Start SonarQube
-            # =====================================================
+            # ------------------------------------------
+            # Wait for SonarQube
+            # ------------------------------------------
 
-            echo "Starting SonarQube..."
-
-            sudo docker start sonarqube 2>/dev/null || true
-
-
-            # =====================================================
-            # 11. Wait for SonarQube
-            # =====================================================
-
-            echo "=========================================="
-            echo "Waiting for SonarQube"
-            echo "=========================================="
+            echo "Waiting for SonarQube..."
 
             for i in {1..30}
             do
@@ -182,9 +93,7 @@ jobs:
                 | grep -o '"status":"[^"]*"' \
                 | head -1)
 
-              echo "Attempt $i"
-              echo "SonarQube status: $STATUS"
-
+              echo "Attempt $i: $STATUS"
 
               if echo "$STATUS" | grep -q '"status":"UP"'
               then
@@ -199,7 +108,7 @@ jobs:
               if [ "$i" -eq 30 ]
               then
 
-                echo "SonarQube failed to start."
+                echo "SonarQube did not become ready."
 
                 sudo docker logs \
                   --tail 100 \
@@ -209,28 +118,47 @@ jobs:
 
               fi
 
-
               sleep 10
 
             done
 
 
-            # =====================================================
-            # 12. Build Java Project
-            # =====================================================
+            # ------------------------------------------
+            # Clone Project
+            # ------------------------------------------
+
+            cd /home/ec2-user
+
+            sudo rm -rf JavaRepo-Project4-5
+
+            sudo git clone \
+              https://github.com/charan1911/JavaRepo-Project4-5.git
+
+            sudo chown -R ec2-user:ec2-user \
+              /home/ec2-user/JavaRepo-Project4-5
+
+
+            # ------------------------------------------
+            # Go to Project
+            # ------------------------------------------
+
+            cd /home/ec2-user/JavaRepo-Project4-5
+
+
+            # ------------------------------------------
+            # Build Project
+            # ------------------------------------------
 
             echo "=========================================="
             echo "Building Java Project"
             echo "=========================================="
 
-            cd /home/ec2-user/JavaRepo-Project4-5
-
             mvn clean verify -DskipTests
 
 
-            # =====================================================
-            # 13. Run SonarQube Analysis
-            # =====================================================
+            # ------------------------------------------
+            # SonarQube Analysis
+            # ------------------------------------------
 
             echo "=========================================="
             echo "Running SonarQube Analysis"
@@ -243,25 +171,13 @@ jobs:
               -Dsonar.token=${{ secrets.SONAR_TOKEN }}
 
 
-            # =====================================================
-            # 14. Final Status
-            # =====================================================
+            # ------------------------------------------
+            # Completed
+            # ------------------------------------------
 
             echo "=========================================="
             echo "SonarQube Analysis Completed"
             echo "=========================================="
 
-            curl -s \
-              http://localhost:9000/api/system/status
-
-            echo ""
-
-            echo "=========================================="
-            echo "SonarQube URL"
-            echo "=========================================="
-
+            echo "SonarQube URL:"
             echo "http://${{ secrets.EC2_HOST }}:9000"
-
-            echo "=========================================="
-            echo "Workflow Completed Successfully"
-            echo "=========================================="
