@@ -329,9 +329,7 @@ jobs:
           echo "======================================"
 
           sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null << 'XML'
-
           <?xml version="1.0" encoding="UTF-8"?>
-
           <tomcat-users
               xmlns="http://tomcat.apache.org/xml"
               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -347,19 +345,42 @@ jobs:
                   roles="manager-gui,admin-gui"/>
 
           </tomcat-users>
-
           XML
 
+          sudo chown tomcat:tomcat /opt/tomcat/conf/tomcat-users.xml
+          sudo chmod 640 /opt/tomcat/conf/tomcat-users.xml
 
-          sudo chown \
-            tomcat:tomcat \
-            /opt/tomcat/conf/tomcat-users.xml
+          # ==================================================
+          # CHECK MANAGER APPLICATION
+          # ==================================================
 
+          echo "======================================"
+          echo "CHECK TOMCAT MANAGER"
+          echo "======================================"
 
-          sudo chmod \
-            640 \
-            /opt/tomcat/conf/tomcat-users.xml
+          if [ -d /opt/tomcat/webapps/manager ]; then
+              echo "Tomcat Manager exists."
+          else
+              echo "ERROR: Tomcat Manager application not found."
+              echo "Expected: /opt/tomcat/webapps/manager"
+              exit 1
+          fi
 
+          # ==================================================
+          # CHECK HOST MANAGER APPLICATION
+          # ==================================================
+
+          echo "======================================"
+          echo "CHECK TOMCAT HOST MANAGER"
+          echo "======================================"
+
+          if [ -d /opt/tomcat/webapps/host-manager ]; then
+              echo "Tomcat Host Manager exists."
+          else
+              echo "ERROR: Tomcat Host Manager application not found."
+              echo "Expected: /opt/tomcat/webapps/host-manager"
+              exit 1
+          fi
 
           # ==================================================
           # MANAGER REMOTE ACCESS
@@ -369,20 +390,39 @@ jobs:
           echo "CONFIGURE MANAGER REMOTE ACCESS"
           echo "======================================"
 
-          if [ -f /opt/tomcat/webapps/manager/META-INF/context.xml ]; then
+          MANAGER_CONTEXT="/opt/tomcat/webapps/manager/META-INF/context.xml"
+
+          if [ -f "$MANAGER_CONTEXT" ]; then
+
+              echo "Manager context.xml found."
+
+              sudo cp "$MANAGER_CONTEXT" "${MANAGER_CONTEXT}.backup"
 
               sudo sed -i \
                 '/RemoteAddrValve/d' \
-                /opt/tomcat/webapps/manager/META-INF/context.xml
+                "$MANAGER_CONTEXT"
 
-              echo "Manager remote IP restriction removed."
+              sudo sed -i \
+                '/RemoteCIDRValve/d' \
+                "$MANAGER_CONTEXT"
+
+              echo "Manager remote access restriction removed."
 
           else
 
-              echo "Manager context.xml not found."
+              echo "Manager context.xml does not exist."
+              echo "Creating Manager context.xml."
+
+              sudo mkdir -p \
+                /opt/tomcat/webapps/manager/META-INF
+
+              sudo tee "$MANAGER_CONTEXT" > /dev/null << 'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Context>
+          </Context>
+          XML
 
           fi
-
 
           # ==================================================
           # HOST MANAGER REMOTE ACCESS
@@ -392,29 +432,84 @@ jobs:
           echo "CONFIGURE HOST MANAGER REMOTE ACCESS"
           echo "======================================"
 
-          if [ -f /opt/tomcat/webapps/host-manager/META-INF/context.xml ]; then
+          HOST_MANAGER_CONTEXT="/opt/tomcat/webapps/host-manager/META-INF/context.xml"
+
+          if [ -f "$HOST_MANAGER_CONTEXT" ]; then
+
+              echo "Host Manager context.xml found."
+
+              sudo cp "$HOST_MANAGER_CONTEXT" "${HOST_MANAGER_CONTEXT}.backup"
 
               sudo sed -i \
                 '/RemoteAddrValve/d' \
-                /opt/tomcat/webapps/host-manager/META-INF/context.xml
+                "$HOST_MANAGER_CONTEXT"
 
-              echo "Host Manager remote IP restriction removed."
+              sudo sed -i \
+                '/RemoteCIDRValve/d' \
+                "$HOST_MANAGER_CONTEXT"
+
+              echo "Host Manager remote access restriction removed."
 
           else
 
-              echo "Host Manager context.xml not found."
+              echo "Host Manager context.xml does not exist."
+              echo "Creating Host Manager context.xml."
+
+              sudo mkdir -p \
+                /opt/tomcat/webapps/host-manager/META-INF
+
+              sudo tee "$HOST_MANAGER_CONTEXT" > /dev/null << 'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Context>
+          </Context>
+          XML
 
           fi
 
+          # ==================================================
+          # FIX OWNERSHIP
+          # ==================================================
 
-          # ==================================================
-          # FIX OWNERSHIP AGAIN
-          # ==================================================
+          echo "======================================"
+          echo "FIX TOMCAT OWNERSHIP"
+          echo "======================================"
 
           sudo chown -R tomcat:tomcat /opt/tomcat/conf
           sudo chown -R tomcat:tomcat /opt/tomcat/webapps
 
+          # ==================================================
+          # VERIFY TOMCAT USER CONFIG
+          # ==================================================
 
+          echo "======================================"
+          echo "VERIFY TOMCAT USERS"
+          echo "======================================"
+
+          sudo grep -E \
+            'manager-gui|admin-gui|username="admin"' \
+            /opt/tomcat/conf/tomcat-users.xml || true
+
+          # ==================================================
+          # VERIFY MANAGER CONTEXT
+          # ==================================================
+
+          echo "======================================"
+          echo "MANAGER CONTEXT"
+          echo "======================================"
+
+          sudo cat \
+            /opt/tomcat/webapps/manager/META-INF/context.xml
+
+          # ==================================================
+          # VERIFY HOST MANAGER CONTEXT
+          # ==================================================
+
+          echo "======================================"
+          echo "HOST MANAGER CONTEXT"
+          echo "======================================"
+
+          sudo cat \
+            /opt/tomcat/webapps/host-manager/META-INF/context.xml
           # ==================================================
           # SHOW MANAGER CONFIG
           # ==================================================
