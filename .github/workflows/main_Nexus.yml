@@ -146,6 +146,27 @@ jobs:
           fi
 
 
+      # --------------------------------------------------------
+      # SSH CONFIGURATION
+      # --------------------------------------------------------
+
+      - name: Configure SSH
+        run: |
+
+          mkdir -p ~/.ssh
+
+
+          echo "${{ secrets.EC2_SSH_KEY }}" \
+            > ~/.ssh/ec2_key
+
+
+          chmod 600 ~/.ssh/ec2_key
+
+
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
+            >> ~/.ssh/known_hosts
+
+
       # ========================================================
       # START / VERIFY NEXUS ON EC2
       # ========================================================
@@ -265,27 +286,6 @@ jobs:
 
           echo "WAR uploaded successfully to Nexus:"
           echo "${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
-
-
-      # --------------------------------------------------------
-      # SSH CONFIGURATION
-      # --------------------------------------------------------
-
-      - name: Configure SSH
-        run: |
-
-          mkdir -p ~/.ssh
-
-
-          echo "${{ secrets.EC2_SSH_KEY }}" \
-            > ~/.ssh/ec2_key
-
-
-          chmod 600 ~/.ssh/ec2_key
-
-
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
-            >> ~/.ssh/known_hosts
 
 
       # ========================================================
