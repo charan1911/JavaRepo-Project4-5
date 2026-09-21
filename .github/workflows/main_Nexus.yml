@@ -1,4 +1,4 @@
-name: NEXUS
+name: Build and Deploy Java WAR to Tomcat
 
 on:
   push:
@@ -6,9 +6,6 @@ on:
       - main
 
   workflow_dispatch:
-
-
-
 
 
 jobs:
@@ -150,6 +147,75 @@ jobs:
 
 
       # ========================================================
+      # START / VERIFY NEXUS ON EC2
+      # ========================================================
+
+      - name: Start Nexus Repository on EC2
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking Docker/Nexus on EC2..."
+
+          ssh -i ~/.ssh/ec2_key \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'EOF'
+          set -e
+
+          echo "===== DOCKER STATUS ====="
+          sudo systemctl enable --now docker || true
+          sudo docker version
+
+          echo "===== CHECK NEXUS CONTAINER ====="
+
+          if sudo docker ps -a --format '{{.Names}}' | grep -qx "nexus"; then
+            echo "Nexus container already exists."
+
+            if ! sudo docker ps --format '{{.Names}}' | grep -qx "nexus"; then
+              echo "Starting existing Nexus container..."
+              sudo docker start nexus
+            fi
+          else
+            echo "Nexus container does not exist."
+            echo "Creating Nexus Repository container..."
+
+            sudo mkdir -p /opt/nexus-data
+            sudo chown -R 200:200 /opt/nexus-data
+
+            sudo docker run -d \
+              --name nexus \
+              --restart unless-stopped \
+              -p 8081:8081 \
+              -v /opt/nexus-data:/nexus-data \
+              sonatype/nexus3:latest
+          fi
+
+          echo "===== NEXUS CONTAINER ====="
+          sudo docker ps --filter "name=^nexus$"
+
+          echo "Waiting for Nexus to listen on port 8081..."
+
+          for i in $(seq 1 60); do
+            if sudo ss -lnt | grep -q ':8081 '; then
+              echo "Nexus port 8081 is listening."
+              break
+            fi
+
+            echo "Waiting for Nexus... attempt $i/60"
+            sleep 5
+          done
+
+          if ! sudo ss -lnt | grep -q ':8081 '; then
+            echo "ERROR: Nexus is not listening on port 8081."
+            echo "===== NEXUS LOGS ====="
+            sudo docker logs --tail 100 nexus || true
+            exit 1
+          fi
+
+          echo "Nexus is running on port 8081."
+          EOF
+
+
+      # ========================================================
       # UPLOAD WAR TO NEXUS
       # ========================================================
 
@@ -174,8 +240,28 @@ jobs:
           VERSION="${GITHUB_SHA::7}"
           ARTIFACT_NAME="neontask-${VERSION}.war"
 
+          echo "Waiting for Nexus HTTP endpoint..."
+
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+              --max-time 10 \
+              "$NEXUS_URL/" || true)
+
+            if [ "$HTTP_CODE" != "000" ]; then
+              echo "Nexus HTTP endpoint responded with status: $HTTP_CODE"
+              break
+            fi
+
+            echo "Waiting for Nexus HTTP endpoint... attempt $i/60"
+            sleep 5
+          done
+
           echo "Uploading $WAR_FILE to Nexus..."
-          curl --fail --show-error --silent             -u "$NEXUS_USERNAME:$NEXUS_PASSWORD"             --upload-file "$WAR_FILE"             "${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
+
+          curl --fail --show-error --silent \
+            -u "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
+            --upload-file "$WAR_FILE" \
+            "${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
 
           echo "WAR uploaded successfully to Nexus:"
           echo "${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
