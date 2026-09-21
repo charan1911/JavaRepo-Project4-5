@@ -250,13 +250,52 @@ jobs:
                 -xzf apache-tomcat.tar.gz \
                 -C /opt
 
-
               sudo rm -rf /opt/tomcat
-
 
               sudo mv \
                 /opt/apache-tomcat-10.1.60 \
                 /opt/tomcat
+
+              echo "======================================"
+              echo "VERIFY TOMCAT WEB APPLICATIONS"
+              echo "======================================"
+
+              sudo ls -lah /opt/tomcat/webapps/
+
+              echo "======================================"
+              echo "CHECK MANAGER APPLICATION"
+              echo "======================================"
+
+              if [ -d /opt/tomcat/webapps/manager ]; then
+                  echo "Tomcat Manager exists."
+              else
+                  echo "Tomcat Manager not found."
+                  echo "Downloading Manager webapp..."
+
+                  cd /tmp
+
+                  curl -fL \
+                    --retry 3 \
+                    --connect-timeout 20 \
+                    -o tomcat-webapps.tar.gz \
+                    https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
+
+                  sudo tar \
+                    -xzf tomcat-webapps.tar.gz \
+                    -C /tmp
+
+                  sudo cp -r \
+                    /tmp/apache-tomcat-10.1.60/webapps/manager \
+                    /opt/tomcat/webapps/
+
+                  sudo cp -r \
+                    /tmp/apache-tomcat-10.1.60/webapps/host-manager \
+                    /opt/tomcat/webapps/
+
+                  sudo rm -rf /tmp/apache-tomcat-10.1.60
+
+                  echo "Manager and Host Manager copied."
+              fi
 
           fi
 
