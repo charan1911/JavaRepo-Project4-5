@@ -16,7 +16,7 @@ jobs:
     steps:
 
       # =====================================================
-      # 1. Checkout Repository
+      # 1. Checkout Code
       # =====================================================
 
       - name: Checkout code
@@ -24,7 +24,7 @@ jobs:
 
 
       # =====================================================
-      # 2. Setup Java on GitHub Runner
+      # 2. Setup Java
       # =====================================================
 
       - name: Setup Java 17
@@ -36,10 +36,10 @@ jobs:
 
 
       # =====================================================
-      # 3. Build WAR File
+      # 3. Build WAR
       # =====================================================
 
-      - name: Build WAR file
+      - name: Build WAR
         run: |
 
           echo "================================"
@@ -49,17 +49,17 @@ jobs:
           mvn clean package -DskipTests
 
           echo "================================"
-          echo "Generated WAR files"
+          echo "WAR FILE"
           echo "================================"
 
           ls -lh target/*.war
 
 
       # =====================================================
-      # 4. Connect to EC2
+      # 4. Install / Configure Tomcat
       # =====================================================
 
-      - name: Install Java and Tomcat on EC2
+      - name: Install and Configure Tomcat
         uses: appleboy/ssh-action@v1.2.2
 
         with:
@@ -73,17 +73,15 @@ jobs:
             set -e
 
             echo "================================"
-            echo "Installing Java 17"
+            echo "Java"
             echo "================================"
-
-            sudo dnf install java-17-amazon-corretto-devel -y
 
             java -version
 
 
-            # =====================================================
+            # =================================================
             # Create Tomcat User
-            # =====================================================
+            # =================================================
 
             echo "================================"
             echo "Creating Tomcat User"
@@ -99,42 +97,79 @@ jobs:
             fi
 
 
-            # =====================================================
-            # Download Tomcat
-            # =====================================================
+            # =================================================
+            # Install Tomcat Only If Needed
+            # =================================================
 
-            echo "================================"
-            echo "Downloading Tomcat"
-            echo "================================"
+            if [ ! -f /opt/tomcat/bin/startup.sh ]; then
 
-            cd /tmp
+              echo "================================"
+              echo "Installing Tomcat"
+              echo "================================"
 
-            sudo rm -f apache-tomcat-10.1.60.tar.gz
+              cd /tmp
 
-            sudo curl -fL -O \
-              https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
+              sudo rm -f apache-tomcat-10.1.60.tar.gz
 
-
-            # =====================================================
-            # Install Tomcat
-            # =====================================================
-
-            echo "================================"
-            echo "Installing Tomcat"
-            echo "================================"
-
-            sudo rm -rf /opt/tomcat
-
-            sudo mkdir -p /opt/tomcat
-
-            sudo tar -xzf apache-tomcat-10.1.60.tar.gz \
-              --strip-components=1 \
-              -C /opt/tomcat
+              sudo curl -fL -O \
+                https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.60/bin/apache-tomcat-10.1.60.tar.gz
 
 
-            # =====================================================
-            # Tomcat Permissions
-            # =====================================================
+              # -----------------------------------------------
+              # Remove old installation
+              # -----------------------------------------------
+
+              sudo rm -rf /opt/tomcat
+
+              sudo mkdir -p /opt/tomcat
+
+
+              # -----------------------------------------------
+              # Extract
+              # -----------------------------------------------
+
+              sudo tar -xzf apache-tomcat-10.1.60.tar.gz \
+                --strip-components=1 \
+                -C /opt/tomcat
+
+
+              # -----------------------------------------------
+              # Verify extraction
+              # -----------------------------------------------
+
+              echo "Tomcat files:"
+
+              sudo ls -lah /opt/tomcat
+
+              echo "Tomcat bin files:"
+
+              sudo ls -lah /opt/tomcat/bin
+
+
+              # -----------------------------------------------
+              # Verify startup script
+              # -----------------------------------------------
+
+              if [ ! -f /opt/tomcat/bin/startup.sh ]; then
+
+                echo "ERROR: Tomcat extraction failed."
+
+                exit 1
+
+              fi
+
+            else
+
+              echo "================================"
+              echo "Tomcat already installed"
+              echo "================================"
+
+            fi
+
+
+            # =================================================
+            # Permissions
+            # =================================================
 
             echo "================================"
             echo "Setting Tomcat Permissions"
@@ -145,9 +180,9 @@ jobs:
             sudo chmod +x /opt/tomcat/bin/*.sh
 
 
-            # =====================================================
+            # =================================================
             # Tomcat Users
-            # =====================================================
+            # =================================================
 
             echo "================================"
             echo "Configuring Tomcat Users"
@@ -180,13 +215,9 @@ jobs:
             EOF
 
 
-            # =====================================================
-            # Manager Configuration
-            # =====================================================
-
-            echo "================================"
-            echo "Configuring Tomcat Manager"
-            echo "================================"
+            # =================================================
+            # Manager
+            # =================================================
 
             sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<'EOF'
 
@@ -201,9 +232,9 @@ jobs:
             EOF
 
 
-            # =====================================================
-            # Host Manager Configuration
-            # =====================================================
+            # =================================================
+            # Host Manager
+            # =================================================
 
             sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<'EOF'
 
@@ -218,9 +249,9 @@ jobs:
             EOF
 
 
-            # =====================================================
-            # Create Systemd Service
-            # =====================================================
+            # =================================================
+            # Systemd Service
+            # =================================================
 
             echo "================================"
             echo "Creating Tomcat Service"
@@ -255,9 +286,9 @@ jobs:
             EOF
 
 
-            # =====================================================
+            # =================================================
             # Start Tomcat
-            # =====================================================
+            # =================================================
 
             echo "================================"
             echo "Starting Tomcat"
@@ -272,28 +303,22 @@ jobs:
             sleep 10
 
 
-            # =====================================================
-            # Check Tomcat
-            # =====================================================
-
-            echo "================================"
-            echo "Tomcat Status"
-            echo "================================"
+            # =================================================
+            # Status
+            # =================================================
 
             sudo systemctl status tomcat --no-pager
 
+
+            # =================================================
+            # Port
+            # =================================================
+
             echo "================================"
-            echo "Checking Port 8080"
+            echo "Port 8080"
             echo "================================"
 
             sudo ss -lntp | grep 8080 || true
-
-
-            # =====================================================
-            # Create Deployment Directory
-            # =====================================================
-
-            sudo mkdir -p /opt/tomcat/webapps
 
 
       # =====================================================
@@ -318,7 +343,7 @@ jobs:
       # 6. Deploy WAR
       # =====================================================
 
-      - name: Deploy WAR to Tomcat
+      - name: Deploy WAR
         uses: appleboy/ssh-action@v1.2.2
 
         with:
@@ -332,19 +357,31 @@ jobs:
             set -e
 
             echo "================================"
-            echo "Deploying WAR"
+            echo "Deploying neontask.war"
             echo "================================"
+
+
+            # Remove old deployment
 
             sudo rm -rf /opt/tomcat/webapps/neontask
 
             sudo rm -f /opt/tomcat/webapps/neontask.war
 
-            sudo cp /tmp/neontask.war \
+
+            # Copy new WAR
+
+            sudo cp \
+              /tmp/neontask.war \
               /opt/tomcat/webapps/neontask.war
+
+
+            # Set ownership
 
             sudo chown tomcat:tomcat \
               /opt/tomcat/webapps/neontask.war
 
+
+            # Restart Tomcat
 
             echo "================================"
             echo "Restarting Tomcat"
@@ -352,17 +389,26 @@ jobs:
 
             sudo systemctl restart tomcat
 
+
             echo "Waiting for deployment..."
 
             sleep 15
 
 
+            # =================================================
+            # Check deployment
+            # =================================================
+
             echo "================================"
-            echo "Checking WAR"
+            echo "Tomcat Webapps"
             echo "================================"
 
-            ls -lh /opt/tomcat/webapps/
+            sudo ls -lah /opt/tomcat/webapps/
 
+
+            # =================================================
+            # Test application
+            # =================================================
 
             echo "================================"
             echo "Testing Application"
@@ -373,7 +419,7 @@ jobs:
 
 
             echo "================================"
-            echo "Deployment Completed"
+            echo "DEPLOYMENT SUCCESS"
             echo "================================"
 
             echo "Application URL:"
