@@ -1,4 +1,4 @@
-name: Build and Deploy Java WAR to Tomcat
+name: NEXUS
 
 on:
   push:
