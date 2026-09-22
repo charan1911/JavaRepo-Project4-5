@@ -252,22 +252,27 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$NEXUS_URL" ] || [ -z "$NEXUS_REPOSITORY" ] || [ -z "$NEXUS_USERNAME" ] || [ -z "$NEXUS_PASSWORD" ]; then
-            echo "ERROR: Nexus secrets are not configured."
-            echo "Required: NEXUS_URL, NEXUS_REPOSITORY, NEXUS_USERNAME, NEXUS_PASSWORD"
+          if [ -z "$NEXUS_USERNAME" ] || [ -z "$NEXUS_PASSWORD" ]; then
+            echo "ERROR: Nexus credentials are not configured."
             exit 1
           fi
 
-          VERSION="${GITHUB_SHA::7}"
-          ARTIFACT_NAME="neontask-${VERSION}.war"
+          VERSION="1.0-${GITHUB_SHA::7}"
+          GROUP_ID="com.example"
+          ARTIFACT_ID="neontask"
 
-          # GitHub-hosted runners may not be able to reach EC2 port 8081
-          # directly because the EC2 Security Group blocks public Nexus access.
-          # Create an SSH tunnel:
-          # runner localhost:18081 -> EC2 localhost:8081 -> Nexus
+          GROUP_PATH="${GROUP_ID//./\/}"
+          ARTIFACT_PATH="/repository/maven-releases/${GROUP_PATH}/${ARTIFACT_ID}/${VERSION}"
+
           echo "Creating SSH tunnel to Nexus..."
 
-          ssh -i ~/.ssh/ec2_key             -o ExitOnForwardFailure=yes             -o ServerAliveInterval=30             -o ServerAliveCountMax=3             -N             -L 18081:127.0.0.1:8081             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" &
+          ssh -i ~/.ssh/ec2_key \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            -N \
+            -L 18081:127.0.0.1:8081 \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" &
 
           SSH_TUNNEL_PID=$!
 
@@ -278,8 +283,12 @@ jobs:
 
           echo "Waiting for Nexus through SSH tunnel..."
 
+          HTTP_CODE="000"
+
           for i in $(seq 1 60); do
-            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}"               --max-time 10               "http://127.0.0.1:18081/" || true)
+            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+              --max-time 10 \
+              "http://127.0.0.1:18081/service/rest/v1/status" || true)
 
             if [ "$HTTP_CODE" != "000" ]; then
               echo "Nexus HTTP endpoint responded with status: $HTTP_CODE"
@@ -290,24 +299,23 @@ jobs:
             sleep 5
           done
 
-          if [ "$HTTP_CODE" = "000" ] || [ -z "$HTTP_CODE" ]; then
+          if [ "$HTTP_CODE" = "000" ]; then
             echo "ERROR: Nexus is not reachable through the SSH tunnel."
             exit 1
           fi
 
-          echo "Uploading $WAR_FILE to Nexus..."
+          echo "Uploading WAR to Nexus Maven hosted repository..."
 
-          curl --fail --show-error --silent             -u "$NEXUS_USERNAME:$NEXUS_PASSWORD"             --upload-file "$WAR_FILE"             "http://127.0.0.1:18081/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
+          curl --fail --show-error --silent \
+            -u "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
+            --upload-file "$WAR_FILE" \
+            "http://127.0.0.1:18081${ARTIFACT_PATH}/${ARTIFACT_ID}-${VERSION}.war"
 
           echo "WAR uploaded successfully to Nexus."
-
-          echo "Nexus artifact:"
-          echo "${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_NAME}"
-
-
-      # ========================================================
-      # PREPARE TOMCAT
-      # ========================================================
+          echo "Repository: maven-releases"
+          echo "Group ID: $GROUP_ID"
+          echo "Artifact ID: $ARTIFACT_ID"
+          echo "Version: $VERSION"
 
       - name: Prepare Tomcat
         run: |
